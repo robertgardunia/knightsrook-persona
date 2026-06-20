@@ -2,22 +2,33 @@
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 
-The LLM is unmodified. The substrate sits between user and model: it rates cohesion in-band on every turn, consolidates selectively at 25% of the context window, stores tiered memory in SQLite, and reinjects curated context on every fresh conversation restart. The entity survives context loss. The user doesn't manage memory — the substrate does.
+The LLM is unmodified. The substrate sits between user and model: it rates cohesion in-band on every turn, consolidates selectively at 25% of the context window, stores tiered memory across two purpose-built backends, and reinjects curated context on every fresh conversation restart. The entity survives context loss. The user doesn't manage memory — the substrate does.
 
 ## Stack
 
 - **Runtime** — Node.js 20+, TypeScript
-- **LLM** — Anthropic SDK (bring your own key; swap model via `MODEL` env var)
-- **Storage** — SQLite via `better-sqlite3` + JSON archive (full-fidelity, never deleted)
+- **LLM** — Anthropic SDK (`claude-sonnet-4-6` by default; swap via `MODEL` env var)
+- **Cohesion storage** — Postgres + pgvector (Docker) — vector similarity retrieval via `nomic-embed-text`
+- **Factual storage** — MySQL — structured turn log + importance-tagged recall
+- **Embeddings** — Ollama (`nomic-embed-text`, 768 dims, fully local)
+- **Archive** — JSON file per turn (`data/archive/`), never deleted
 - **Interface** — CLI REPL
 
 ## Quickstart
 
 ```bash
-cp .env.example .env   # fill in ANTHROPIC_API_KEY
+# 1. Start the vector DB
+docker compose up -d
+
+# 2. Configure env
+cp .env.example .env   # fill in ANTHROPIC_API_KEY, DB_USER, DB_PASS
+
+# 3. Install and run
 npm install
 npm run dev
 ```
+
+Requires: Docker, Ollama with `nomic-embed-text` pulled, MySQL running locally.
 
 ## Architecture
 
@@ -35,17 +46,28 @@ A turn where a metaphor unifies three earlier threads is high cohesion but may c
 ### Loop
 
 1. User message arrives → importance extracted
-2. Two-path retrieval: cohesion-weighted (continuity context) + importance-tagged (fact recall)
-3. LLM called with substrate-curated system prompt
-4. Response parsed for hidden `<cohesion>` block
-5. Normalizer checks response against retrieved memories (contradiction detection + missed-relevance injection)
-6. Assistant turn saved with cohesion rating + importance tags
-7. If buffer > 25% of context limit → consolidation pass
+2. Query embedded via Ollama (`nomic-embed-text`)
+3. Two-path retrieval in parallel:
+   - **Cohesion path** — vector cosine similarity in Postgres (semantic proximity)
+   - **Factual path** — keyword overlap against importance fields in Postgres
+4. LLM called with substrate-curated system prompt
+5. Response parsed for hidden `<cohesion>` block
+6. Normalizer checks response against retrieved memories (contradiction detection)
+7. Assistant turn saved to MySQL + JSON archive
+8. If buffer > 25% of context limit → consolidation pass (LLM-driven, embeddings stored in Postgres)
+
+### Storage split
+
+| Backend | What lives there |
+|---------|-----------------|
+| **Postgres + pgvector** | Consolidated memories with embeddings — cohesion retrieval |
+| **MySQL** | Every turn (raw log) — factual/importance retrieval |
+| **data/archive/** | Full JSON per turn, never deleted |
 
 ### Tiered storage
 
 - **Hot** — current buffer (in-context)
-- **Warm** — recent consolidated memories (sub-second keyword retrieval)
+- **Warm** — recent consolidated memories (vector retrieval)
 - **Cold** — older memories, lower retrieval weight
 - **Archive** — full JSON of every turn, never deleted
 
@@ -58,6 +80,17 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `ANTHROPIC_API_KEY` | required | Anthropic API key |
 | `MODEL` | `claude-sonnet-4-6` | Model ID |
 | `CONTEXT_BUDGET_PCT` | `0.25` | Fraction of context window before consolidation triggers |
+| `DB_HOST` | `127.0.0.1` | MySQL host |
+| `DB_PORT` | `3306` | MySQL port |
+| `DB_NAME` | `knightsrook_persona` | MySQL database |
+| `DB_USER` | required | MySQL user |
+| `DB_PASS` | required | MySQL password |
+| `PG_HOST` | `127.0.0.1` | Postgres host |
+| `PG_PORT` | `5433` | Postgres port (Docker maps to 5432 internally) |
+| `PG_DB` | `persona` | Postgres database |
+| `PG_USER` | required | Postgres user |
+| `PG_PASS` | required | Postgres password |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
 
 ## Validation checklist
 
@@ -68,7 +101,7 @@ After a session, check:
 3. Does consolidation preserve the high-cohesion exchanges, not just the informationally dense ones?
 4. Does conversation continue coherently after a forced context reset?
 5. Does the normalizer flag real contradictions when you contradict established context?
-6. Does the normalizer inject relevant prior facts when you ask something the substrate knows?
+6. Does vector retrieval surface semantically related memories (not just keyword matches)?
 
 ## License
 

@@ -3,10 +3,7 @@ import { ulid } from 'ulid'
 import type { Turn, ConsolidatedMemory } from './types.js'
 import { CONSOLIDATION_PROMPT } from './prompts.js'
 import { mergeImportance } from './importance.js'
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
+import { embedText } from './embeddings.js'
 
 export async function consolidate(
   client: Anthropic,
@@ -43,11 +40,17 @@ export async function consolidate(
     decision.summarize = decision.summarize ?? []
     decision.drop = decision.drop ?? []
   } catch {
-    // Fallback: preserve high cohesion, drop the rest
+    // Fallback: preserve high cohesion, summarize the rest into a single cluster
+    const highIds = buffer.filter(t => (t.cohesion?.score ?? 0) >= 8).map(t => t.id)
+    const lowTurns = buffer.filter(t => (t.cohesion?.score ?? 10) < 8)
     decision = {
-      preserve: buffer.filter(t => (t.cohesion?.score ?? 0) >= 8).map(t => t.id),
-      summarize: [],
-      drop: buffer.filter(t => (t.cohesion?.score ?? 10) < 8).map(t => t.id),
+      preserve: highIds,
+      summarize: lowTurns.length > 0 ? [{
+        cluster: 'general',
+        turn_ids: lowTurns.map(t => t.id),
+        summary: lowTurns.map(t => t.content.slice(0, 120)).join(' | '),
+      }] : [],
+      drop: [],
     }
   }
 
@@ -75,7 +78,8 @@ export async function consolidate(
       retrievalCount: 0,
       createdAt: Date.now(),
     }
-    storage.saveMemory(memory)
+    const embedding = await embedText(cluster.summary)
+    await storage.saveMemory(memory, embedding)
   }
 
   // Return only preserved turns (archive already written per-turn at save time)

@@ -7,6 +7,8 @@ import { extractImportance } from './importance.js'
 import { normalize } from './normalizer.js'
 import { consolidate } from './consolidator.js'
 import { buildSystemPrompt } from './prompts.js'
+import { embedText } from './embeddings.js'
+import { formatImportanceBanner } from './importance.js'
 
 const MODEL_CONTEXT_TOKENS: Record<string, number> = {
   'claude-opus-4-8':    200_000,
@@ -32,6 +34,7 @@ export type SubstrateResponse = {
   tokensUsed: number
 }
 
+// @pattern:anthropic-sdk-node
 export class Substrate {
   private client: Anthropic
   private model: string
@@ -46,6 +49,10 @@ export class Substrate {
     this.model = model
     this.budgetPct = budgetPct
     this.storage = new Storage()
+  }
+
+  async init() {
+    await this.storage.ensureReady()
   }
 
   private bufferTokens(): number {
@@ -68,11 +75,14 @@ export class Substrate {
       timestamp: Date.now(),
     }
     this.buffer.push(userTurn)
-    this.storage.saveTurn(userTurn)
+    await this.storage.saveTurn(userTurn)
 
     // Retrieve context via both paths
-    const cohesionMems = this.storage.retrieveCohesionWeighted(userMessage)
-    const factualMems = this.storage.retrieveByImportance(userMessage)
+    const [queryEmbedding, factualMems] = await Promise.all([
+      embedText(userMessage),
+      this.storage.retrieveByImportance(userMessage),
+    ])
+    const cohesionMems = await this.storage.retrieveCohesionWeighted(queryEmbedding)
 
     const cohesionContext = cohesionMems.map(m => `[${m.cluster}] ${m.summary}`).join('\n')
     const factualContext = [
@@ -120,7 +130,7 @@ export class Substrate {
       timestamp: Date.now(),
     }
     this.buffer.push(assistantTurn)
-    this.storage.saveTurn(assistantTurn)
+    await this.storage.saveTurn(assistantTurn)
 
     // Consolidate if needed
     let consolidated = false
@@ -133,8 +143,6 @@ export class Substrate {
     const normBanner = actions.contradictionsFound.length || actions.additionsIntegrated.length
       ? `[Normalizer: ${actions.contradictionsFound.length} contradiction(s), ${actions.additionsIntegrated.length} addition(s)]`
       : null
-
-    const { formatImportanceBanner } = await import('./importance.js')
 
     return {
       visible: normalized,

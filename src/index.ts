@@ -3,17 +3,18 @@ import * as readline from 'readline'
 import { Substrate } from './substrate.js'
 import { formatCohesionBanner } from './cohesion.js'
 
-const required = ['ANTHROPIC_API_KEY']
-for (const key of required) {
-  if (!process.env[key]) {
-    console.error(`Missing required env var: ${key}`)
-    process.exit(1)
-  }
+// @pattern:env-fail-fast
+const required = ['ANTHROPIC_API_KEY', 'DB_USER', 'DB_PASS', 'PG_USER', 'PG_PASS']
+const missing = required.filter(k => !process.env[k])
+if (missing.length > 0) {
+  console.error(`Missing required env vars: ${missing.join(', ')}`)
+  process.exit(1)
 }
 
 const model = process.env.MODEL ?? 'claude-sonnet-4-6'
 const budgetPct = parseFloat(process.env.CONTEXT_BUDGET_PCT ?? '0.25')
 const substrate = new Substrate(process.env.ANTHROPIC_API_KEY!, model, budgetPct)
+await substrate.init()
 
 const rl = readline.createInterface({
   input: process.stdin,
