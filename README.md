@@ -17,18 +17,21 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 ## Quickstart
 
 ```bash
-# 1. Start the vector DB
+# 1. Pull the embedding model (one-time)
+ollama pull nomic-embed-text
+
+# 2. Start the vector DB
 docker compose up -d
 
-# 2. Configure env
-cp .env.example .env   # fill in ANTHROPIC_API_KEY, DB_USER, DB_PASS
+# 3. Configure env
+cp .env.example .env   # fill in ANTHROPIC_API_KEY, DB_USER, DB_PASS, PG_USER, PG_PASS
 
-# 3. Install and run
+# 4. Install and run
 npm install
 npm run dev
 ```
 
-Requires: Docker, Ollama with `nomic-embed-text` pulled, MySQL running locally.
+Requires: Docker, Ollama running locally, MySQL running locally.
 
 ## Architecture
 
@@ -45,11 +48,11 @@ A turn where a metaphor unifies three earlier threads is high cohesion but may c
 
 ### Loop
 
-1. User message arrives → importance extracted
-2. Query embedded via Ollama (`nomic-embed-text`)
-3. Two-path retrieval in parallel:
-   - **Cohesion path** — vector cosine similarity in Postgres (semantic proximity)
-   - **Factual path** — keyword overlap against importance fields in Postgres
+1. User message arrives → importance extracted, user turn saved to MySQL + JSON archive
+2. Query embedded via Ollama (`nomic-embed-text`) — runs in parallel with factual retrieval
+3. Two-path retrieval:
+   - **Cohesion path** — vector cosine similarity in Postgres (after embedding completes)
+   - **Factual path** — keyword overlap against importance fields in Postgres (runs in parallel with embedding)
 4. LLM called with substrate-curated system prompt
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
@@ -60,8 +63,8 @@ A turn where a metaphor unifies three earlier threads is high cohesion but may c
 
 | Backend | What lives there |
 |---------|-----------------|
-| **Postgres + pgvector** | Consolidated memories with embeddings — cohesion retrieval |
-| **MySQL** | Every turn (raw log) — factual/importance retrieval |
+| **Postgres + pgvector** | Consolidated memories with embeddings — both cohesion and factual retrieval |
+| **MySQL** | Every turn (raw log) |
 | **data/archive/** | Full JSON per turn, never deleted |
 
 ### Tiered storage
