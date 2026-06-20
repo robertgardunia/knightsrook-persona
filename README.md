@@ -14,6 +14,17 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 - **Archive** — JSON file per turn (`data/archive/`), never deleted
 - **Interface** — CLI REPL
 
+## Multi-persona
+
+Each persona is completely air-gapped — separate MySQL rows, separate Postgres rows, separate archive directory. Set `PERSONA_ID` at startup:
+
+```bash
+PERSONA_ID=alice npm run dev
+PERSONA_ID=control npm run dev
+```
+
+No state is shared between personas. Each builds its own knowledge base exclusively from its own conversation history.
+
 ## Quickstart
 
 ```bash
@@ -94,6 +105,7 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_USER` | required | Postgres user |
 | `PG_PASS` | required | Postgres password |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
+| `PERSONA_ID` | `default` | Active persona — all storage scoped to this ID |
 
 ## Tests
 

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
-import type { Turn, ConsolidatedMemory } from './types.js'
+import type { Turn, ConsolidatedMemory, ConsolidationTelemetry } from './types.js'
 import { CONSOLIDATION_PROMPT } from './prompts.js'
 import { mergeImportance } from './importance.js'
 import { embedText } from './embeddings.js'
@@ -10,7 +10,7 @@ export async function consolidate(
   model: string,
   buffer: Turn[],
   storage: import('./storage.js').Storage
-): Promise<Turn[]> {
+): Promise<{ buffer: Turn[]; telemetry: ConsolidationTelemetry }> {
   const bufferDump = buffer.map(t => ({
     id: t.id,
     role: t.role,
@@ -22,12 +22,7 @@ export async function consolidate(
   const response = await client.messages.create({
     model,
     max_tokens: 2048,
-    messages: [
-      {
-        role: 'user',
-        content: CONSOLIDATION_PROMPT + JSON.stringify(bufferDump, null, 2),
-      },
-    ],
+    messages: [{ role: 'user', content: CONSOLIDATION_PROMPT + JSON.stringify(bufferDump, null, 2) }],
   })
 
   const raw = response.content[0].type === 'text' ? response.content[0].text : ''
@@ -40,7 +35,6 @@ export async function consolidate(
     decision.summarize = decision.summarize ?? []
     decision.drop = decision.drop ?? []
   } catch {
-    // Fallback: preserve high cohesion, summarize the rest into a single cluster
     const highIds = buffer.filter(t => (t.cohesion?.score ?? 0) >= 8).map(t => t.id)
     const lowTurns = buffer.filter(t => (t.cohesion?.score ?? 10) < 8)
     decision = {
@@ -55,13 +49,14 @@ export async function consolidate(
   }
 
   const preserveSet = new Set(decision.preserve)
+  const telemetryClusters = []
 
-  // Save summarized clusters as consolidated memories
   for (const cluster of decision.summarize) {
     const clusterTurns = buffer.filter(t => cluster.turn_ids.includes(t.id))
     const cohesionPeak = Math.max(...clusterTurns.map(t => t.cohesion?.score ?? 0), 0)
-    const importanceTags = clusterTurns.map(t => t.importance ?? { entities: [], facts: [], preferences: [], decisions: [] })
-    const merged = mergeImportance(importanceTags)
+    const merged = mergeImportance(
+      clusterTurns.map(t => t.importance ?? { entities: [], facts: [], preferences: [], decisions: [] })
+    )
 
     const memory: ConsolidatedMemory = {
       id: ulid(),
@@ -78,10 +73,28 @@ export async function consolidate(
       retrievalCount: 0,
       createdAt: Date.now(),
     }
+
     const embedding = await embedText(cluster.summary)
     await storage.saveMemory(memory, embedding)
+
+    telemetryClusters.push({
+      cluster: cluster.cluster,
+      turnCount: clusterTurns.length,
+      cohesionPeak,
+      tier: memory.tier,
+    })
   }
 
-  // Return only preserved turns (archive already written per-turn at save time)
-  return buffer.filter(t => preserveSet.has(t.id))
+  const newBuffer = buffer.filter(t => preserveSet.has(t.id))
+
+  const telemetry: ConsolidationTelemetry = {
+    triggered: true,
+    bufferTokensBefore: buffer.reduce((s, t) => s + t.tokens, 0),
+    bufferTokensAfter: newBuffer.reduce((s, t) => s + t.tokens, 0),
+    preserved: decision.preserve.length,
+    summarized: telemetryClusters,
+    dropped: decision.drop.length,
+  }
+
+  return { buffer: newBuffer, telemetry }
 }

@@ -1,19 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
-import type { Turn } from './types.js'
+import type { Turn, TurnTelemetry, ConsolidationTelemetry } from './types.js'
 import { Storage } from './storage.js'
 import { parseCohesion } from './cohesion.js'
-import { extractImportance } from './importance.js'
+import { extractImportance, formatImportanceBanner } from './importance.js'
 import { normalize } from './normalizer.js'
 import { consolidate } from './consolidator.js'
 import { buildSystemPrompt } from './prompts.js'
 import { embedText } from './embeddings.js'
-import { formatImportanceBanner } from './importance.js'
 
 const MODEL_CONTEXT_TOKENS: Record<string, number> = {
-  'claude-opus-4-8':    200_000,
-  'claude-sonnet-4-6':  200_000,
-  'claude-haiku-4-5-20251001': 200_000,
+  'claude-opus-4-8':             200_000,
+  'claude-sonnet-4-6':           200_000,
+  'claude-haiku-4-5-20251001':   200_000,
 }
 
 function getContextLimit(model: string): number {
@@ -26,12 +25,8 @@ function estimateTokens(text: string): number {
 
 export type SubstrateResponse = {
   visible: string
-  cohesionScore: number | undefined
-  cohesionDrivers: string | undefined
-  normalizationBanner: string | null
   importanceBanner: string
-  consolidated: boolean
-  tokensUsed: number
+  telemetry: TurnTelemetry
 }
 
 // @pattern:anthropic-sdk-node
@@ -39,16 +34,17 @@ export class Substrate {
   private client: Anthropic
   private model: string
   private budgetPct: number
+  private personaId: string
   private buffer: Turn[] = []
   private storage: Storage
-  private normalizationCatches = 0
-  private consolidationCycles = 0
+  private turnNumber = 0
 
-  constructor(apiKey: string, model: string, budgetPct: number) {
+  constructor(apiKey: string, model: string, budgetPct: number, personaId: string) {
     this.client = new Anthropic({ apiKey })
     this.model = model
     this.budgetPct = budgetPct
-    this.storage = new Storage()
+    this.personaId = personaId
+    this.storage = new Storage(personaId)
   }
 
   async init() {
@@ -65,6 +61,9 @@ export class Substrate {
   }
 
   async respond(userMessage: string): Promise<SubstrateResponse> {
+    this.turnNumber++
+    const contextBudget = getContextLimit(this.model)
+
     // User turn
     const userTurn: Turn = {
       id: ulid(),
@@ -77,7 +76,7 @@ export class Substrate {
     this.buffer.push(userTurn)
     await this.storage.saveTurn(userTurn)
 
-    // Retrieve context via both paths
+    // Embed + retrieve in parallel
     const [queryEmbedding, factualMems] = await Promise.all([
       embedText(userMessage),
       this.storage.retrieveByImportance(userMessage),
@@ -94,8 +93,8 @@ export class Substrate {
     ].slice(0, 10).join('\n')
 
     const systemPrompt = buildSystemPrompt(cohesionContext, factualContext, {
-      catches: this.normalizationCatches,
-      cycles: this.consolidationCycles,
+      catches: 0,
+      cycles: 0,
     })
 
     // Call LLM
@@ -111,9 +110,6 @@ export class Substrate {
 
     // Normalize
     const { normalized, actions } = normalize(candidate, userMessage, cohesionMems, factualMems)
-    if (actions.contradictionsFound.length || actions.additionsIntegrated.length) {
-      this.normalizationCatches++
-    }
 
     const importanceTags = extractImportance(normalized)
 
@@ -132,26 +128,60 @@ export class Substrate {
     this.buffer.push(assistantTurn)
     await this.storage.saveTurn(assistantTurn)
 
+    const tokensBeforeConsolidation = this.bufferTokens()
+
     // Consolidate if needed
-    let consolidated = false
-    if (this.shouldConsolidate()) {
-      this.buffer = await consolidate(this.client, this.model, this.buffer, this.storage)
-      this.consolidationCycles++
-      consolidated = true
+    let consolidationTelemetry: ConsolidationTelemetry = {
+      triggered: false,
+      bufferTokensBefore: tokensBeforeConsolidation,
+      bufferTokensAfter: tokensBeforeConsolidation,
+      preserved: 0,
+      summarized: [],
+      dropped: 0,
     }
 
-    const normBanner = actions.contradictionsFound.length || actions.additionsIntegrated.length
-      ? `[Normalizer: ${actions.contradictionsFound.length} contradiction(s), ${actions.additionsIntegrated.length} addition(s)]`
-      : null
+    if (this.shouldConsolidate()) {
+      const result = await consolidate(this.client, this.model, this.buffer, this.storage)
+      this.buffer = result.buffer
+      consolidationTelemetry = result.telemetry
+    }
+
+    const telemetry: TurnTelemetry = {
+      turnNumber: this.turnNumber,
+      personaId: this.personaId,
+      cohesion,
+      contextTokens: this.bufferTokens(),
+      contextBudget,
+      contextPct: this.bufferTokens() / contextBudget,
+      retrieval: {
+        cohesion: {
+          count: cohesionMems.length,
+          similarities: cohesionMems.map(m => m.similarity ?? 0),
+        },
+        factual: {
+          count: factualMems.length,
+          keywordHits: factualMems.map(m => m.keywordHits ?? 0),
+        },
+      },
+      normalization: {
+        contradictions: actions.contradictionsFound.length,
+        additions: actions.additionsIntegrated.length,
+        candidateLength: candidate.length,
+        normalizedLength: normalized.length,
+      },
+      storage: {
+        userTurnId: userTurn.id,
+        assistantTurnId: assistantTurn.id,
+        personaId: this.personaId,
+        archivePath: `data/archive/${this.personaId}/`,
+      },
+      consolidation: consolidationTelemetry,
+    }
 
     return {
       visible: normalized,
-      cohesionScore: cohesion?.score,
-      cohesionDrivers: cohesion?.drivers,
-      normalizationBanner: normBanner,
       importanceBanner: formatImportanceBanner(importanceTags),
-      consolidated,
-      tokensUsed: this.bufferTokens(),
+      telemetry,
     }
   }
 }

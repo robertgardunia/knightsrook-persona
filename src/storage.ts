@@ -7,17 +7,21 @@ import type { Turn, ConsolidatedMemory } from './types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, '..', 'data')
-const ARCHIVE_DIR = join(DATA_DIR, 'archive')
+
+export type RetrievedMemory = ConsolidatedMemory & { similarity?: number; keywordHits?: number }
 
 // @pattern:db-singleton
 export class Storage {
   private mysql!: mysql.Pool
   private pg!: pg.Pool
+  private personaId: string
+  private archiveDir: string
   private ready: Promise<void>
 
-  constructor() {
-    mkdirSync(DATA_DIR, { recursive: true })
-    mkdirSync(ARCHIVE_DIR, { recursive: true })
+  constructor(personaId: string) {
+    this.personaId = personaId
+    this.archiveDir = join(DATA_DIR, 'archive', personaId)
+    mkdirSync(this.archiveDir, { recursive: true })
     this.ready = this.init()
   }
 
@@ -51,6 +55,7 @@ export class Storage {
     await this.mysql.execute(`
       CREATE TABLE IF NOT EXISTS turns (
         id VARCHAR(26) PRIMARY KEY,
+        persona_id VARCHAR(64) NOT NULL DEFAULT 'default',
         role VARCHAR(10) NOT NULL,
         content TEXT NOT NULL,
         raw_llm_content TEXT,
@@ -64,23 +69,24 @@ export class Storage {
         normalization_contradictions JSON,
         normalization_additions JSON,
         tokens INT NOT NULL,
-        timestamp BIGINT NOT NULL
+        timestamp BIGINT NOT NULL,
+        INDEX idx_turns_persona (persona_id)
       )
     `)
   }
 
-  async saveTurn(turn: Turn) {
+  async saveTurn(turn: Turn): Promise<void> {
     await this.mysql.execute(
       `INSERT INTO turns (
-        id, role, content, raw_llm_content,
+        id, persona_id, role, content, raw_llm_content,
         cohesion_score, cohesion_drivers, cohesion_shifts,
         importance_entities, importance_facts, importance_preferences, importance_decisions,
         normalization_contradictions, normalization_additions,
         tokens, timestamp
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE content = VALUES(content)`,
       [
-        turn.id, turn.role, turn.content, turn.rawLLMContent ?? null,
+        turn.id, this.personaId, turn.role, turn.content, turn.rawLLMContent ?? null,
         turn.cohesion?.score ?? null, turn.cohesion?.drivers ?? null, turn.cohesion?.shifts ?? null,
         JSON.stringify(turn.importance?.entities ?? []),
         JSON.stringify(turn.importance?.facts ?? []),
@@ -91,21 +97,20 @@ export class Storage {
         turn.tokens, turn.timestamp,
       ]
     )
-    writeFileSync(join(ARCHIVE_DIR, `${turn.id}.json`), JSON.stringify(turn, null, 2))
+    writeFileSync(join(this.archiveDir, `${turn.id}.json`), JSON.stringify(turn, null, 2))
   }
 
-  // Cohesion memory — stored in Postgres with vector embedding for semantic retrieval
-  async saveMemory(memory: ConsolidatedMemory, embedding: number[]) {
+  async saveMemory(memory: ConsolidatedMemory, embedding: number[]): Promise<void> {
     const vec = `[${embedding.join(',')}]`
     await this.pg.query(
       `INSERT INTO consolidated_memories (
-        id, cluster, turn_ids, summary, embedding, cohesion_peak,
+        id, persona_id, cluster, turn_ids, summary, embedding, cohesion_peak,
         merged_entities, merged_facts, merged_preferences, merged_decisions,
         tier, last_retrieved, retrieval_count, created_at
-      ) VALUES ($1,$2,$3,$4,$5::vector,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ) VALUES ($1,$2,$3,$4,$5,$6::vector,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT (id) DO UPDATE SET summary = EXCLUDED.summary`,
       [
-        memory.id, memory.cluster,
+        memory.id, this.personaId, memory.cluster,
         JSON.stringify(memory.turnIds), memory.summary, vec, memory.cohesionPeak,
         JSON.stringify(memory.mergedEntities), JSON.stringify(memory.mergedFacts),
         JSON.stringify(memory.mergedPreferences), JSON.stringify(memory.mergedDecisions),
@@ -114,16 +119,16 @@ export class Storage {
     )
   }
 
-  // Cohesion retrieval — cosine similarity on embedding
-  async retrieveCohesionWeighted(queryEmbedding: number[], limit = 5): Promise<ConsolidatedMemory[]> {
+  // Cohesion retrieval — cosine similarity, persona-scoped
+  async retrieveCohesionWeighted(queryEmbedding: number[], limit = 5): Promise<RetrievedMemory[]> {
     const vec = `[${queryEmbedding.join(',')}]`
     const { rows } = await this.pg.query(
       `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
        FROM consolidated_memories
-       WHERE embedding IS NOT NULL
+       WHERE persona_id = $2 AND embedding IS NOT NULL
        ORDER BY embedding <=> $1::vector
-       LIMIT $2`,
-      [vec, limit]
+       LIMIT $3`,
+      [vec, this.personaId, limit]
     )
 
     if (rows.length > 0) {
@@ -137,22 +142,19 @@ export class Storage {
       )
     }
 
-    return rows.map(this.rowToMemory)
+    return rows.map((r: any) => ({ ...this.rowToMemory(r), similarity: Number(r.similarity) }))
   }
 
-  // Factual retrieval — keyword search on importance fields in MySQL
-  async retrieveByImportance(query: string, limit = 5): Promise<ConsolidatedMemory[]> {
+  // Factual retrieval — keyword overlap, persona-scoped
+  async retrieveByImportance(query: string, limit = 5): Promise<RetrievedMemory[]> {
     const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 3)
     if (keywords.length === 0) return []
 
     const { rows } = await this.pg.query(
-      `SELECT * FROM consolidated_memories
-       ORDER BY created_at DESC
-       LIMIT $1`,
-      [limit * 4]
+      `SELECT * FROM consolidated_memories WHERE persona_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [this.personaId, limit * 4]
     )
 
-    // Filter in-app by keyword overlap across importance fields
     const scored = rows
       .map((r: any) => {
         const mem = this.rowToMemory(r)
@@ -164,17 +166,17 @@ export class Storage {
         const hits = keywords.filter(k => haystack.includes(k)).length
         return { mem, hits }
       })
-      .filter(({ hits }) => hits > 0)
-      .sort((a, b) => b.hits - a.hits)
+      .filter(({ hits }: any) => hits > 0)
+      .sort((a: any, b: any) => b.hits - a.hits)
       .slice(0, limit)
 
-    return scored.map(({ mem }) => mem)
+    return scored.map(({ mem, hits }: any) => ({ ...mem, keywordHits: hits }))
   }
 
   async recentConsolidated(limit = 3): Promise<ConsolidatedMemory[]> {
     const { rows } = await this.pg.query(
-      `SELECT * FROM consolidated_memories ORDER BY created_at DESC LIMIT $1`,
-      [limit]
+      `SELECT * FROM consolidated_memories WHERE persona_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [this.personaId, limit]
     )
     return rows.map(this.rowToMemory)
   }
