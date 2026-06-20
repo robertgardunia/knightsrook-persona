@@ -1,0 +1,149 @@
+import Anthropic from '@anthropic-ai/sdk'
+import { ulid } from 'ulid'
+import type { Turn } from './types.js'
+import { Storage } from './storage.js'
+import { parseCohesion } from './cohesion.js'
+import { extractImportance } from './importance.js'
+import { normalize } from './normalizer.js'
+import { consolidate } from './consolidator.js'
+import { buildSystemPrompt } from './prompts.js'
+
+const MODEL_CONTEXT_TOKENS: Record<string, number> = {
+  'claude-opus-4-8':    200_000,
+  'claude-sonnet-4-6':  200_000,
+  'claude-haiku-4-5-20251001': 200_000,
+}
+
+function getContextLimit(model: string): number {
+  return MODEL_CONTEXT_TOKENS[model] ?? 100_000
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+export type SubstrateResponse = {
+  visible: string
+  cohesionScore: number | undefined
+  cohesionDrivers: string | undefined
+  normalizationBanner: string | null
+  importanceBanner: string
+  consolidated: boolean
+  tokensUsed: number
+}
+
+export class Substrate {
+  private client: Anthropic
+  private model: string
+  private budgetPct: number
+  private buffer: Turn[] = []
+  private storage: Storage
+  private normalizationCatches = 0
+  private consolidationCycles = 0
+
+  constructor(apiKey: string, model: string, budgetPct: number) {
+    this.client = new Anthropic({ apiKey })
+    this.model = model
+    this.budgetPct = budgetPct
+    this.storage = new Storage()
+  }
+
+  private bufferTokens(): number {
+    return this.buffer.reduce((sum, t) => sum + t.tokens, 0)
+  }
+
+  private shouldConsolidate(): boolean {
+    const limit = getContextLimit(this.model)
+    return this.bufferTokens() > limit * this.budgetPct
+  }
+
+  async respond(userMessage: string): Promise<SubstrateResponse> {
+    // User turn
+    const userTurn: Turn = {
+      id: ulid(),
+      role: 'user',
+      content: userMessage,
+      importance: extractImportance(userMessage),
+      tokens: estimateTokens(userMessage),
+      timestamp: Date.now(),
+    }
+    this.buffer.push(userTurn)
+    this.storage.saveTurn(userTurn)
+
+    // Retrieve context via both paths
+    const cohesionMems = this.storage.retrieveCohesionWeighted(userMessage)
+    const factualMems = this.storage.retrieveByImportance(userMessage)
+
+    const cohesionContext = cohesionMems.map(m => `[${m.cluster}] ${m.summary}`).join('\n')
+    const factualContext = [
+      ...new Set([
+        ...factualMems.flatMap(m => m.mergedFacts.slice(0, 2)),
+        ...factualMems.flatMap(m => m.mergedPreferences.slice(0, 2)),
+        ...factualMems.flatMap(m => m.mergedDecisions.slice(0, 2)),
+      ])
+    ].slice(0, 10).join('\n')
+
+    const systemPrompt = buildSystemPrompt(cohesionContext, factualContext, {
+      catches: this.normalizationCatches,
+      cycles: this.consolidationCycles,
+    })
+
+    // Call LLM
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: this.buffer.map(t => ({ role: t.role, content: t.content })),
+    })
+
+    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const { visible: candidate, cohesion } = parseCohesion(rawText)
+
+    // Normalize
+    const { normalized, actions } = normalize(candidate, userMessage, cohesionMems, factualMems)
+    if (actions.contradictionsFound.length || actions.additionsIntegrated.length) {
+      this.normalizationCatches++
+    }
+
+    const importanceTags = extractImportance(normalized)
+
+    // Assistant turn
+    const assistantTurn: Turn = {
+      id: ulid(),
+      role: 'assistant',
+      content: normalized,
+      rawLLMContent: candidate,
+      cohesion,
+      importance: importanceTags,
+      normalizationApplied: actions,
+      tokens: estimateTokens(normalized),
+      timestamp: Date.now(),
+    }
+    this.buffer.push(assistantTurn)
+    this.storage.saveTurn(assistantTurn)
+
+    // Consolidate if needed
+    let consolidated = false
+    if (this.shouldConsolidate()) {
+      this.buffer = await consolidate(this.client, this.model, this.buffer, this.storage)
+      this.consolidationCycles++
+      consolidated = true
+    }
+
+    const normBanner = actions.contradictionsFound.length || actions.additionsIntegrated.length
+      ? `[Normalizer: ${actions.contradictionsFound.length} contradiction(s), ${actions.additionsIntegrated.length} addition(s)]`
+      : null
+
+    const { formatImportanceBanner } = await import('./importance.js')
+
+    return {
+      visible: normalized,
+      cohesionScore: cohesion?.score,
+      cohesionDrivers: cohesion?.drivers,
+      normalizationBanner: normBanner,
+      importanceBanner: formatImportanceBanner(importanceTags),
+      consolidated,
+      tokensUsed: this.bufferTokens(),
+    }
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+data/persona.db
+data/archive/
+*.js.map
