@@ -92,6 +92,17 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_PASS` | required | Postgres password |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
 
+## Tests
+
+```bash
+npm test          # run once
+npm run test:watch  # watch mode
+```
+
+26 unit tests covering `cohesion`, `importance`, `normalizer`, and `embeddings`. Storage, consolidator, and substrate are integration-layer and require live DB + Anthropic — covered by the validation checklist below instead.
+
+Tests run automatically on every commit via `.git/hooks/pre-commit`.
+
 ## Validation checklist
 
 After a session, check:
