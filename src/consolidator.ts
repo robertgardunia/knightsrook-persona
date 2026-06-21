@@ -1,16 +1,21 @@
 import { ulid } from 'ulid'
 import type { Turn, ConsolidatedMemory, ConsolidationCluster } from './types.js'
 import { mergeImportance } from './importance.js'
-import { embedText, ollamaGenerate } from './embeddings.js'
+import { embedText } from './embeddings.js'
 
-// Per-response capture. Runs every turn, entirely on the local model.
+// Per-response capture. Runs every turn.
 //
 // The division of labor is fixed: the INSTANCE already judged this exchange's
-// cohesion in-band (score + drivers + shifts). That judgment is irreplaceable
-// and is treated as ground truth here. Ollama is "too dumb" to find relevancy
-// and is never asked to — it only writes a summary over the instance's own
-// tags and the verbatim text. Bucketing (tier) is deterministic code, not a
-// model decision: the score the instance gave IS the weight.
+// cohesion in-band (score + drivers + shifts). That judgment — including the
+// characterization of WHAT mattered — is irreplaceable and is treated as
+// ground truth. We deliberately do NOT route it through a local model to
+// "summarize": a small model can only degrade an already-accurate, zero-risk
+// description or hallucinate around it, and the summary is both what gets
+// embedded (drives retrieval) and what gets injected back as identity context.
+// So the memory text IS the instance's own drivers/shifts. Ollama only embeds.
+//
+// Bucketing (tier) is deterministic code, not a model decision: the score the
+// instance gave IS the weight.
 //
 // Returns null when the assistant turn carries no cohesion rating (honest
 // absence) — there is nothing to weight, so nothing is stored.
@@ -25,27 +30,12 @@ export async function captureTurn(
   const peak = cohesion.score
   const tier: ConsolidatedMemory['tier'] = peak >= 7 ? 'warm' : 'cold'
 
-  // Ollama writes the summary — seeded by the instance's own drivers/shifts so
-  // the local model is summarizing, not interpreting. Degrade gracefully: if
-  // the local model is down, fall back to the instance's drivers + a content
-  // slice. The cohesion weight is never lost, only the prose quality.
-  const prompt =
-    `Summarize this exchange in 2-3 sentences capturing what mattered. ` +
-    `Write plainly, no preamble.\n\n` +
-    `User: ${userTurn.content.slice(0, 800)}\n` +
-    `Assistant: ${assistantTurn.content.slice(0, 1200)}\n\n` +
-    `The assistant noted what drove this exchange's cohesion: "${cohesion.drivers}". ` +
-    `What shifted: "${cohesion.shifts}".\n\nSummary:`
-
-  let summary: string
-  try {
-    summary = await ollamaGenerate(prompt)
-    if (!summary) throw new Error('empty summary')
-  } catch {
-    summary = [cohesion.drivers, cohesion.shifts, assistantTurn.content.slice(0, 200)]
-      .filter(Boolean)
-      .join(' — ')
-  }
+  // Summary = the instance's own in-band characterization. No model call, no
+  // paraphrase, no hallucination surface. drivers leads (what produced the
+  // cohesion); shifts follows (what changed).
+  const summary = cohesion.shifts
+    ? `${cohesion.drivers} — shift: ${cohesion.shifts}`
+    : cohesion.drivers
 
   // Cluster label: a short theme from the instance's drivers (no model call).
   const cluster = cohesion.drivers.split(/[—,.;]/)[0].trim().slice(0, 60) || 'exchange'

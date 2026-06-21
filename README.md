@@ -100,7 +100,7 @@ Because the cohesion-weighted edges are the entire differentiator from a stock L
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
 7. Assistant turn saved to MySQL + JSON archive
-8. **Per-response capture** — the exchange is consolidated into weighted Postgres memory *every turn*, not at a token threshold. The instance's in-band cohesion score is the weight (`cohesion_peak`); the local model (`OLLAMA_CHAT_MODEL`) only writes the summary text and embeds it. Ollama never judges relevancy — that's the instance's job, already done in-band.
+8. **Per-response capture** — the exchange is consolidated into weighted Postgres memory *every turn*, not at a token threshold. The instance's in-band cohesion score is the weight (`cohesion_peak`), and the memory text **is the instance's own `drivers`/`shifts`** — its in-band characterization of what mattered. No local model paraphrases it: a small model could only degrade an already-accurate description or hallucinate around it, and that text is what gets embedded *and* injected back as identity context. Ollama only embeds.
 9. **Lossless FIFO eviction** — when the hot buffer exceeds `CONTEXT_BUDGET_PCT` of the window, the oldest *already-captured* turns are dropped. Because capture ran on every exchange, anything old enough to evict is already weighted in Postgres — so the cliff's edge costs nothing. No model call at eviction.
 
 Why per-response: the cohesion-weighted edges are the entire differentiator. Under the old token-threshold trigger they didn't exist until ~50k tokens (hours of conversation) — meaning the system ran as a plain LLM until then. Capturing every response makes the weighting live from turn one. The hot buffer budget is deliberately *generous* (default 65%) because in-context recall is faster and lossless versus vector retrieval; retrieval is the fallback for what has aged off the cliff.
@@ -149,8 +149,7 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_DB` | `persona` | Postgres database |
 | `PG_USER` | required | Postgres user |
 | `PG_PASS` | required | Postgres password |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
-| `OLLAMA_CHAT_MODEL` | `llama3.2` | Local model for consolidation summaries (mechanical only — never judges cohesion) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (embeddings only) |
 | `PERSONA_ID` | `default` | Active persona — all storage scoped to this ID |
 
 ## Tests
