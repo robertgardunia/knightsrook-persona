@@ -40,9 +40,26 @@ cp .env.example .env   # fill in ANTHROPIC_API_KEY, DB_USER, DB_PASS, PG_USER, P
 # 4. Install and run
 npm install
 npm run dev
+# → http://localhost:5030
 ```
 
 Requires: Docker, Ollama running locally, MySQL running locally.
+
+## Interface
+
+Web-based chat UI at `http://localhost:5030`. Chat on the left, live telemetry sidebar on the right.
+
+**Sidebar panels:**
+- **Session** — turn number, active persona
+- **Cohesion** — score (1-10), bar, drivers, shifts
+- **Context** — token usage vs budget, consolidation threshold marker
+- **Retrieval** — cohesion path (count + cosine similarities), factual path (count + keyword hits)
+- **Normalization** — contradictions flagged, additions integrated, length delta
+- **Storage** — turn IDs, archive path
+- **Importance** — entity/fact/preference/decision counts
+- **Consolidation** — appears only when triggered; shows preserved/summarized/dropped counts and cluster details
+
+The persona ID is editable in the header — change it to switch personas without restarting.
 
 ## Architecture
 
