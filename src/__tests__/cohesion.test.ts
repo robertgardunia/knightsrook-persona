@@ -11,17 +11,18 @@ describe('parseCohesion', () => {
     expect(cohesion?.shifts).toBe('user clarified goal')
   })
 
-  it('returns undefined cohesion when block is absent', () => {
+  it('returns fallback cohesion (score 5) when block is absent', () => {
     const { visible, cohesion } = parseCohesion('Just a response with no block.')
     expect(visible).toBe('Just a response with no block.')
-    expect(cohesion).toBeUndefined()
+    expect(cohesion.score).toBe(5)
+    expect(cohesion.drivers).toContain('missing')
   })
 
-  it('returns undefined cohesion on malformed JSON inside block', () => {
+  it('returns fallback cohesion on malformed JSON inside block', () => {
     const raw = `Response.\n<cohesion>\nnot valid json\n</cohesion>`
     const { visible, cohesion } = parseCohesion(raw)
     expect(visible).toBe('Response.')
-    expect(cohesion).toBeUndefined()
+    expect(cohesion.score).toBe(5)
   })
 
   it('clamps non-numeric score to 5', () => {

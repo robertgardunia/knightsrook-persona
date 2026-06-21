@@ -85,6 +85,8 @@ PERSONA tracks two distinct signals — a key distinction from existing memory-l
 
 A turn where a metaphor unifies three earlier threads is high cohesion but may carry no new facts. A turn where the user discloses their email is high importance but low cohesion. Collapsing these into one signal (as Mem0, Letta, and Generative Agents do) loses the distinction.
 
+The cohesion block requirement is placed at the **top** of the system prompt and labeled non-negotiable so it isn't deprioritized as context grows. If the model still omits the block, the parser returns a neutral fallback (score 5) so the substrate's consolidation pipeline never goes dark.
+
 ### Loop
 
 1. User message arrives → importance extracted, user turn saved to MySQL + JSON archive

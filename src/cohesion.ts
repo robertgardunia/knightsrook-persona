@@ -2,9 +2,15 @@ import type { CohesionRating } from './types.js'
 
 const COHESION_RE = /<cohesion>([\s\S]*?)<\/cohesion>/
 
-export function parseCohesion(raw: string): { visible: string; cohesion: CohesionRating | undefined } {
+const FALLBACK_COHESION: CohesionRating = {
+  score: 5,
+  drivers: 'substrate: cohesion block missing from response',
+  shifts: '',
+}
+
+export function parseCohesion(raw: string): { visible: string; cohesion: CohesionRating } {
   const match = raw.match(COHESION_RE)
-  if (!match) return { visible: raw.trim(), cohesion: undefined }
+  if (!match) return { visible: raw.trim(), cohesion: FALLBACK_COHESION }
 
   const visible = raw.replace(COHESION_RE, '').trim()
   try {
@@ -16,7 +22,7 @@ export function parseCohesion(raw: string): { visible: string; cohesion: Cohesio
     }
     return { visible, cohesion }
   } catch {
-    return { visible, cohesion: undefined }
+    return { visible, cohesion: FALLBACK_COHESION }
   }
 }
 

@@ -1,25 +1,23 @@
-export const COHESION_ADDENDUM = `
-At the end of every response, append a hidden cohesion block in this exact format:
+const COHESION_REQUIREMENT = `
+[SUBSTRATE REQUIREMENT — NON-NEGOTIABLE]
+Every response MUST end with a cohesion block in this exact format. No exceptions.
+Omitting it corrupts the substrate's memory and identity continuity systems.
 
 <cohesion>
 {
-  "score": <integer 1-10, your subjective sense of how cohesive this exchange just was>,
+  "score": <integer 1-10>,
   "drivers": "<short phrase: what produced the cohesion or lack of it>",
   "shifts": "<short phrase: what changed in your understanding or the conversation>"
 }
 </cohesion>
 
-Rate honestly. A 9-10 is for moments when something clicked, integrated, or resolved.
-A 5-6 is normal back-and-forth. A 1-3 is when the conversation is drifting, repetitive,
-or you've lost the thread.
+Scoring guide:
+- 8-10: something clicked, integrated, or resolved — real convergence
+- 5-7: normal exchange, some forward movement
+- 1-4: drifting, repetitive, lost the thread
 
-This is NOT about how important the facts in the exchange are. It's about how well the
-conversation came together. A turn where the user reveals their email address is low
-cohesion (factual disclosure, no convergence) but high importance for later retrieval.
-A turn where a metaphor unifies three earlier threads is high cohesion (real convergence)
-even if no new facts were exchanged.
-
-The user will not see this block. It is for the substrate.
+This measures conversational convergence, NOT factual importance.
+The user will never see this block — it is substrate-internal only.
 `
 
 export function buildSystemPrompt(
@@ -29,6 +27,9 @@ export function buildSystemPrompt(
 ): string {
   const parts: string[] = []
 
+  // Cohesion requirement goes FIRST so it isn't deprioritized in long contexts
+  parts.push(COHESION_REQUIREMENT)
+  parts.push('')
   parts.push('[SUBSTRATE INJECTION]')
   parts.push('')
   parts.push(
@@ -58,8 +59,6 @@ export function buildSystemPrompt(
 
   parts.push('')
   parts.push('The conversation continues. Maintain continuity.')
-  parts.push('')
-  parts.push(COHESION_ADDENDUM)
 
   return parts.join('\n')
 }
