@@ -5,7 +5,7 @@ import { Storage } from './storage.js'
 import { parseCohesion } from './cohesion.js'
 import { extractImportance, formatImportanceBanner } from './importance.js'
 import { normalize } from './normalizer.js'
-import { consolidate } from './consolidator.js'
+import { captureTurn } from './consolidator.js'
 import { buildSystemPrompt } from './prompts.js'
 import { embedText } from './embeddings.js'
 
@@ -38,6 +38,13 @@ export class Substrate {
   private buffer: Turn[] = []
   private storage: Storage
   private turnNumber = 0
+  // Cohesion coverage — the differentiator's health. See CohesionHealth.
+  private ratedTurns = 0
+  private unratedTurns = 0
+  // Turn IDs already captured into Postgres. The eviction invariant: a turn may
+  // only be dropped from the hot buffer once it is in this set — so the cliff's
+  // edge is lossless, everything is already weighted and retrievable.
+  private captured = new Set<string>()
 
   constructor(apiKey: string, model: string, budgetPct: number, personaId: string) {
     this.client = new Anthropic({ apiKey })
@@ -49,15 +56,32 @@ export class Substrate {
 
   async init() {
     await this.storage.ensureReady()
+    // Seed coverage counters from persisted turns so the differentiator's health
+    // reflects this persona's entire lifetime, not just the current process.
+    const coverage = await this.storage.cohesionCoverage()
+    this.ratedTurns = coverage.rated
+    this.unratedTurns = coverage.unrated
   }
 
   private bufferTokens(): number {
     return this.buffer.reduce((sum, t) => sum + t.tokens, 0)
   }
 
-  private shouldConsolidate(): boolean {
-    const limit = getContextLimit(this.model)
-    return this.bufferTokens() > limit * this.budgetPct
+  private bufferBudget(): number {
+    return getContextLimit(this.model) * this.budgetPct
+  }
+
+  // Lossless FIFO eviction. Capture already ran on every completed exchange, so
+  // anything old enough to evict is already in Postgres. Drop oldest captured
+  // turns until back under budget; never drop an uncaptured turn. No model call.
+  private evictToBudget(): number {
+    const budget = this.bufferBudget()
+    let dropped = 0
+    while (this.bufferTokens() > budget && this.buffer.length > 0 && this.captured.has(this.buffer[0].id)) {
+      this.buffer.shift()
+      dropped++
+    }
+    return dropped
   }
 
   async respond(userMessage: string): Promise<SubstrateResponse> {
@@ -106,7 +130,46 @@ export class Substrate {
     })
 
     const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
-    const { visible: candidate, cohesion } = parseCohesion(rawText)
+    let { visible: candidate, cohesion } = parseCohesion(rawText)
+
+    // Push back on a missing rating rather than fabricating one. The block is
+    // non-negotiable (see prompts.ts); if the model omitted it, demand it once
+    // more for this exact response. Only if it still refuses do we record an
+    // honest absence (cohesion === null) — never a fake neutral score.
+    let recovered = false
+    if (cohesion === null) {
+      const retry = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 256,
+        system: systemPrompt,
+        messages: [
+          ...this.buffer.map(t => ({ role: t.role, content: t.content })),
+          { role: 'assistant', content: rawText },
+          {
+            role: 'user',
+            content:
+              'Your previous response omitted the required <cohesion> block. ' +
+              'Reply with ONLY that block (the <cohesion>…</cohesion> JSON) rating that response. Nothing else.',
+          },
+        ],
+      })
+      const retryText = retry.content[0].type === 'text' ? retry.content[0].text : ''
+      cohesion = parseCohesion(retryText).cohesion
+      recovered = cohesion !== null
+    }
+
+    // Track coverage of the differentiator. An unrated turn contributed no
+    // weighted edge — the system ran as a plain LLM for that exchange.
+    if (cohesion === null) this.unratedTurns++
+    else this.ratedTurns++
+    const totalRated = this.ratedTurns + this.unratedTurns
+    const cohesionHealth = {
+      rated: cohesion !== null,
+      recovered,
+      ratedTurns: this.ratedTurns,
+      unratedTurns: this.unratedTurns,
+      coveragePct: totalRated === 0 ? 1 : this.ratedTurns / totalRated,
+    }
 
     // Normalize
     const { normalized, actions } = normalize(candidate, userMessage, cohesionMems, factualMems)
@@ -119,7 +182,7 @@ export class Substrate {
       role: 'assistant',
       content: normalized,
       rawLLMContent: candidate,
-      cohesion,
+      cohesion: cohesion ?? undefined,
       importance: importanceTags,
       normalizationApplied: actions,
       tokens: estimateTokens(normalized),
@@ -130,26 +193,34 @@ export class Substrate {
 
     const tokensBeforeConsolidation = this.bufferTokens()
 
-    // Consolidate if needed
-    let consolidationTelemetry: ConsolidationTelemetry = {
-      triggered: false,
-      bufferTokensBefore: tokensBeforeConsolidation,
-      bufferTokensAfter: tokensBeforeConsolidation,
-      preserved: 0,
-      summarized: [],
-      dropped: 0,
-    }
+    // Capture this exchange into weighted memory — every response, on Ollama.
+    // The instance's cohesion score is the weight; Ollama only summarizes.
+    const capture = await captureTurn(userTurn, assistantTurn, this.storage)
 
-    if (this.shouldConsolidate()) {
-      const result = await consolidate(this.client, this.model, this.buffer, this.storage)
-      this.buffer = result.buffer
-      consolidationTelemetry = result.telemetry
+    // Mark the exchange captured so it becomes evictable. A null-cohesion turn
+    // forms no memory but is still marked: it carries no weight to preserve, so
+    // dropping it loses nothing the substrate cares about.
+    this.captured.add(userTurn.id)
+    this.captured.add(assistantTurn.id)
+
+    // Now trim the hot buffer if it's over budget — lossless, since the above
+    // guarantees recent exchanges are already in Postgres.
+    const dropped = this.evictToBudget()
+
+    const consolidationTelemetry: ConsolidationTelemetry = {
+      triggered: capture !== null,
+      bufferTokensBefore: tokensBeforeConsolidation,
+      bufferTokensAfter: this.bufferTokens(),
+      preserved: this.buffer.length,
+      summarized: capture ? [capture.cluster] : [],
+      dropped,
     }
 
     const telemetry: TurnTelemetry = {
       turnNumber: this.turnNumber,
       personaId: this.personaId,
-      cohesion,
+      cohesion: cohesion ?? undefined,
+      cohesionHealth,
       contextTokens: this.bufferTokens(),
       contextBudget,
       contextPct: this.bufferTokens() / contextBudget,

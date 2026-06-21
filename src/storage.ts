@@ -100,6 +100,77 @@ export class Storage {
     writeFileSync(join(this.archiveDir, `${turn.id}.json`), JSON.stringify(turn, null, 2))
   }
 
+  // Durable cohesion coverage — counts persisted assistant turns with/without a
+  // rating. User turns are excluded (they're never rated). Seeds the substrate's
+  // counters at startup so coverage reflects the persona's whole lifetime, not
+  // just the current process.
+  async cohesionCoverage(): Promise<{ rated: number; unrated: number }> {
+    await this.ready
+    const [rows] = await this.mysql.query<any[]>(
+      `SELECT
+         SUM(cohesion_score IS NOT NULL) AS rated,
+         SUM(cohesion_score IS NULL)     AS unrated
+       FROM turns
+       WHERE persona_id = ? AND role = 'assistant'`,
+      [this.personaId]
+    )
+    const row = rows[0] ?? {}
+    return { rated: Number(row.rated ?? 0), unrated: Number(row.unrated ?? 0) }
+  }
+
+  // All turns for this persona, oldest first. Used by the backfill to replay
+  // captured-but-never-consolidated exchanges.
+  async loadTurns(): Promise<Turn[]> {
+    await this.ready
+    const [rows] = await this.mysql.query<any[]>(
+      `SELECT * FROM turns WHERE persona_id = ? ORDER BY timestamp ASC, id ASC`,
+      [this.personaId]
+    )
+    return rows.map(this.rowToTurn)
+  }
+
+  // Turn IDs already folded into a consolidated memory — so the backfill (and
+  // the eviction invariant) can skip anything already weighted in Postgres.
+  async consolidatedTurnIds(): Promise<Set<string>> {
+    await this.ready
+    const { rows } = await this.pg.query(
+      `SELECT turn_ids FROM consolidated_memories WHERE persona_id = $1`,
+      [this.personaId]
+    )
+    const ids = new Set<string>()
+    for (const r of rows) {
+      const arr = typeof r.turn_ids === 'string' ? JSON.parse(r.turn_ids) : r.turn_ids
+      for (const id of arr ?? []) ids.add(id)
+    }
+    return ids
+  }
+
+  private rowToTurn = (row: any): Turn => ({
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    rawLLMContent: row.raw_llm_content ?? undefined,
+    cohesion: row.cohesion_score == null ? undefined : {
+      score: row.cohesion_score,
+      drivers: row.cohesion_drivers ?? '',
+      shifts: row.cohesion_shifts ?? '',
+    },
+    importance: {
+      entities: this.parseJsonArr(row.importance_entities),
+      facts: this.parseJsonArr(row.importance_facts),
+      preferences: this.parseJsonArr(row.importance_preferences),
+      decisions: this.parseJsonArr(row.importance_decisions),
+    },
+    tokens: row.tokens,
+    timestamp: Number(row.timestamp),
+  })
+
+  private parseJsonArr(v: any): string[] {
+    if (Array.isArray(v)) return v
+    if (typeof v === 'string') { try { return JSON.parse(v) } catch { return [] } }
+    return []
+  }
+
   async saveMemory(memory: ConsolidatedMemory, embedding: number[]): Promise<void> {
     const vec = `[${embedding.join(',')}]`
     await this.pg.query(

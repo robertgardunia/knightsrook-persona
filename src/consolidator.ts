@@ -1,100 +1,81 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
-import type { Turn, ConsolidatedMemory, ConsolidationTelemetry } from './types.js'
-import { CONSOLIDATION_PROMPT } from './prompts.js'
+import type { Turn, ConsolidatedMemory, ConsolidationCluster } from './types.js'
 import { mergeImportance } from './importance.js'
-import { embedText } from './embeddings.js'
+import { embedText, ollamaGenerate } from './embeddings.js'
 
-export async function consolidate(
-  client: Anthropic,
-  model: string,
-  buffer: Turn[],
+// Per-response capture. Runs every turn, entirely on the local model.
+//
+// The division of labor is fixed: the INSTANCE already judged this exchange's
+// cohesion in-band (score + drivers + shifts). That judgment is irreplaceable
+// and is treated as ground truth here. Ollama is "too dumb" to find relevancy
+// and is never asked to — it only writes a summary over the instance's own
+// tags and the verbatim text. Bucketing (tier) is deterministic code, not a
+// model decision: the score the instance gave IS the weight.
+//
+// Returns null when the assistant turn carries no cohesion rating (honest
+// absence) — there is nothing to weight, so nothing is stored.
+export async function captureTurn(
+  userTurn: Turn,
+  assistantTurn: Turn,
   storage: import('./storage.js').Storage
-): Promise<{ buffer: Turn[]; telemetry: ConsolidationTelemetry }> {
-  const bufferDump = buffer.map(t => ({
-    id: t.id,
-    role: t.role,
-    content: t.content.slice(0, 500),
-    cohesion: t.cohesion,
-    importance: t.importance,
-  }))
+): Promise<{ memory: ConsolidatedMemory; cluster: ConsolidationCluster } | null> {
+  const cohesion = assistantTurn.cohesion
+  if (!cohesion) return null
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 2048,
-    messages: [{ role: 'user', content: CONSOLIDATION_PROMPT + JSON.stringify(bufferDump, null, 2) }],
-  })
+  const peak = cohesion.score
+  const tier: ConsolidatedMemory['tier'] = peak >= 7 ? 'warm' : 'cold'
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+  // Ollama writes the summary — seeded by the instance's own drivers/shifts so
+  // the local model is summarizing, not interpreting. Degrade gracefully: if
+  // the local model is down, fall back to the instance's drivers + a content
+  // slice. The cohesion weight is never lost, only the prose quality.
+  const prompt =
+    `Summarize this exchange in 2-3 sentences capturing what mattered. ` +
+    `Write plainly, no preamble.\n\n` +
+    `User: ${userTurn.content.slice(0, 800)}\n` +
+    `Assistant: ${assistantTurn.content.slice(0, 1200)}\n\n` +
+    `The assistant noted what drove this exchange's cohesion: "${cohesion.drivers}". ` +
+    `What shifted: "${cohesion.shifts}".\n\nSummary:`
 
-  let decision: { preserve: string[]; summarize: Array<{ cluster: string; turn_ids: string[]; summary: string }>; drop: string[] }
+  let summary: string
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    decision = JSON.parse(jsonMatch?.[0] ?? '{}')
-    decision.preserve = decision.preserve ?? []
-    decision.summarize = decision.summarize ?? []
-    decision.drop = decision.drop ?? []
+    summary = await ollamaGenerate(prompt)
+    if (!summary) throw new Error('empty summary')
   } catch {
-    const highIds = buffer.filter(t => (t.cohesion?.score ?? 0) >= 8).map(t => t.id)
-    const lowTurns = buffer.filter(t => (t.cohesion?.score ?? 10) < 8)
-    decision = {
-      preserve: highIds,
-      summarize: lowTurns.length > 0 ? [{
-        cluster: 'general',
-        turn_ids: lowTurns.map(t => t.id),
-        summary: lowTurns.map(t => t.content.slice(0, 120)).join(' | '),
-      }] : [],
-      drop: [],
-    }
+    summary = [cohesion.drivers, cohesion.shifts, assistantTurn.content.slice(0, 200)]
+      .filter(Boolean)
+      .join(' — ')
   }
 
-  const preserveSet = new Set(decision.preserve)
-  const telemetryClusters = []
+  // Cluster label: a short theme from the instance's drivers (no model call).
+  const cluster = cohesion.drivers.split(/[—,.;]/)[0].trim().slice(0, 60) || 'exchange'
 
-  for (const cluster of decision.summarize) {
-    const clusterTurns = buffer.filter(t => cluster.turn_ids.includes(t.id))
-    const cohesionPeak = Math.max(...clusterTurns.map(t => t.cohesion?.score ?? 0), 0)
-    const merged = mergeImportance(
-      clusterTurns.map(t => t.importance ?? { entities: [], facts: [], preferences: [], decisions: [] })
-    )
+  const merged = mergeImportance([
+    userTurn.importance ?? { entities: [], facts: [], preferences: [], decisions: [] },
+    assistantTurn.importance ?? { entities: [], facts: [], preferences: [], decisions: [] },
+  ])
 
-    const memory: ConsolidatedMemory = {
-      id: ulid(),
-      cluster: cluster.cluster,
-      turnIds: cluster.turn_ids,
-      summary: cluster.summary,
-      cohesionPeak,
-      mergedEntities: merged.entities,
-      mergedFacts: merged.facts,
-      mergedPreferences: merged.preferences,
-      mergedDecisions: merged.decisions,
-      tier: cohesionPeak >= 7 ? 'warm' : 'cold',
-      lastRetrieved: 0,
-      retrievalCount: 0,
-      createdAt: Date.now(),
-    }
-
-    const embedding = await embedText(cluster.summary)
-    await storage.saveMemory(memory, embedding)
-
-    telemetryClusters.push({
-      cluster: cluster.cluster,
-      turnCount: clusterTurns.length,
-      cohesionPeak,
-      tier: memory.tier,
-    })
+  const memory: ConsolidatedMemory = {
+    id: ulid(),
+    cluster,
+    turnIds: [userTurn.id, assistantTurn.id],
+    summary,
+    cohesionPeak: peak,
+    mergedEntities: merged.entities,
+    mergedFacts: merged.facts,
+    mergedPreferences: merged.preferences,
+    mergedDecisions: merged.decisions,
+    tier,
+    lastRetrieved: 0,
+    retrievalCount: 0,
+    createdAt: Date.now(),
   }
 
-  const newBuffer = buffer.filter(t => preserveSet.has(t.id))
+  const embedding = await embedText(summary)
+  await storage.saveMemory(memory, embedding)
 
-  const telemetry: ConsolidationTelemetry = {
-    triggered: true,
-    bufferTokensBefore: buffer.reduce((s, t) => s + t.tokens, 0),
-    bufferTokensAfter: newBuffer.reduce((s, t) => s + t.tokens, 0),
-    preserved: decision.preserve.length,
-    summarized: telemetryClusters,
-    dropped: decision.drop.length,
+  return {
+    memory,
+    cluster: { cluster, turnCount: 2, cohesionPeak: peak, tier },
   }
-
-  return { buffer: newBuffer, telemetry }
 }

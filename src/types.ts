@@ -82,10 +82,23 @@ export type ConsolidationTelemetry = {
   dropped: number
 }
 
+// Cohesion is THE differentiator — the weighted edges that make this more than
+// a plain LLM. A turn with no rating contributed nothing to those edges, so we
+// track coverage explicitly: a falling rate means the system is silently
+// regressing toward a stock model.
+export type CohesionHealth = {
+  rated: boolean        // did this turn end with a usable cohesion rating?
+  recovered: boolean    // was it only obtained after the re-prompt push-back?
+  ratedTurns: number    // lifetime rated turns for this persona
+  unratedTurns: number  // lifetime turns that degraded to no rating
+  coveragePct: number   // ratedTurns / (ratedTurns + unratedTurns)
+}
+
 export type TurnTelemetry = {
   turnNumber: number
   personaId: string
   cohesion: CohesionRating | undefined
+  cohesionHealth: CohesionHealth
   contextTokens: number
   contextBudget: number
   contextPct: number

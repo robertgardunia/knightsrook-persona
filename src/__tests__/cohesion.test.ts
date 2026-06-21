@@ -11,24 +11,29 @@ describe('parseCohesion', () => {
     expect(cohesion?.shifts).toBe('user clarified goal')
   })
 
-  it('returns fallback cohesion (score 5) when block is absent', () => {
+  it('returns null cohesion (no fabricated score) when block is absent', () => {
     const { visible, cohesion } = parseCohesion('Just a response with no block.')
     expect(visible).toBe('Just a response with no block.')
-    expect(cohesion.score).toBe(5)
-    expect(cohesion.drivers).toContain('missing')
+    expect(cohesion).toBeNull()
   })
 
-  it('returns fallback cohesion on malformed JSON inside block', () => {
+  it('returns null cohesion on malformed JSON inside block', () => {
     const raw = `Response.\n<cohesion>\nnot valid json\n</cohesion>`
     const { visible, cohesion } = parseCohesion(raw)
     expect(visible).toBe('Response.')
-    expect(cohesion.score).toBe(5)
+    expect(cohesion).toBeNull()
   })
 
-  it('clamps non-numeric score to 5', () => {
+  it('returns null on non-numeric score rather than fabricating one', () => {
     const raw = `Response.\n<cohesion>\n{"score":"high","drivers":"x","shifts":"y"}\n</cohesion>`
     const { cohesion } = parseCohesion(raw)
-    expect(cohesion?.score).toBe(5)
+    expect(cohesion).toBeNull()
+  })
+
+  it('returns null on out-of-range score', () => {
+    const raw = `Response.\n<cohesion>\n{"score":42,"drivers":"x","shifts":"y"}\n</cohesion>`
+    const { cohesion } = parseCohesion(raw)
+    expect(cohesion).toBeNull()
   })
 
   it('handles multiline response with cohesion block in the middle', () => {

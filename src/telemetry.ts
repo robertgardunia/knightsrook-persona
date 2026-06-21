@@ -26,12 +26,15 @@ export function renderTelemetry(t: TurnTelemetry): string {
   // Cohesion
   if (t.cohesion) {
     const b = bar(t.cohesion.score, 10)
-    lines.push(` COHESION    ${b}  ${t.cohesion.score}/10`)
+    const tag = t.cohesionHealth.recovered ? '  (recovered via re-prompt)' : ''
+    lines.push(` COHESION    ${b}  ${t.cohesion.score}/10${tag}`)
     lines.push(`   drivers : ${t.cohesion.drivers || '—'}`)
     lines.push(`   shifts  : ${t.cohesion.shifts || '—'}`)
   } else {
-    lines.push(` COHESION    [no rating — cohesion block absent from response]`)
+    lines.push(` COHESION    ⚠ NO RATING — ran as a plain LLM this turn (no weighted edge added)`)
   }
+  const h = t.cohesionHealth
+  lines.push(`   coverage: ${(h.coveragePct * 100).toFixed(0)}%  (${h.ratedTurns} rated / ${h.unratedTurns} unrated)`)
 
   lines.push('')
 

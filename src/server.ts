@@ -36,7 +36,7 @@ if (missing.length > 0) {
 
 const PORT      = Number(process.env.PORT ?? 5030)
 const model     = process.env.MODEL ?? 'claude-sonnet-4-6'
-const budgetPct = parseFloat(process.env.CONTEXT_BUDGET_PCT ?? '0.25')
+const budgetPct = parseFloat(process.env.CONTEXT_BUDGET_PCT ?? '0.65')
 
 const app    = express()
 const server = createServer(app)

@@ -340,7 +340,9 @@ function renderSidebar(t, importanceBanner) {
         </div>
         ${kv('drivers', c.drivers || '—')}
         ${kv('shifts', c.shifts || '—')}
-      ` : kv('status', 'no cohesion block in response', 'red')}
+        ${t.cohesionHealth.recovered ? kv('note', 'recovered via re-prompt', '#facc15') : ''}
+      ` : kv('status', '⚠ no rating — ran as a plain LLM this turn', 'red')}
+      ${(() => { const h = t.cohesionHealth; const pct = (h.coveragePct * 100).toFixed(0); const col = h.coveragePct >= 0.95 ? '#4ade80' : h.coveragePct >= 0.8 ? '#facc15' : '#f87171'; return kv('coverage', `${pct}% · ${h.ratedTurns} rated / ${h.unratedTurns} unrated`, col) })()}
     </div>
   </div>`
 

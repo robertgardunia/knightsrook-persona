@@ -12,7 +12,7 @@ if (missing.length > 0) {
 }
 
 const model = process.env.MODEL ?? 'claude-sonnet-4-6'
-const budgetPct = parseFloat(process.env.CONTEXT_BUDGET_PCT ?? '0.25')
+const budgetPct = parseFloat(process.env.CONTEXT_BUDGET_PCT ?? '0.65')
 const personaId = process.env.PERSONA_ID ?? 'default'
 
 const substrate = new Substrate(process.env.ANTHROPIC_API_KEY!, model, budgetPct, personaId)

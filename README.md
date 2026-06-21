@@ -85,7 +85,9 @@ PERSONA tracks two distinct signals — a key distinction from existing memory-l
 
 A turn where a metaphor unifies three earlier threads is high cohesion but may carry no new facts. A turn where the user discloses their email is high importance but low cohesion. Collapsing these into one signal (as Mem0, Letta, and Generative Agents do) loses the distinction.
 
-The cohesion block requirement is placed at the **top** of the system prompt and labeled non-negotiable so it isn't deprioritized as context grows. If the model still omits the block, the parser returns a neutral fallback (score 5) so the substrate's consolidation pipeline never goes dark.
+The cohesion block requirement is placed at the **top** of the system prompt and labeled non-negotiable so it isn't deprioritized as context grows. If the model still omits the block, the substrate **pushes back**: it re-prompts the model once, demanding the block for that exact response. Only if the model still refuses does the turn record an honest absence (cohesion `null`) — the substrate never fabricates a neutral score. A fake rating would poison consolidation, which weights turns by cohesion; an unrated turn is simply treated as unrated (peak `0`, never preserved on its own merit).
+
+Because the cohesion-weighted edges are the entire differentiator from a stock LLM, an unrated turn is treated as a degradation event, not a benign gap. Telemetry exposes **cohesion coverage** (`ratedTurns / total`) on every turn and flags any turn that only got a rating after the re-prompt (`recovered`). Coverage is **durable**: the counters are seeded at startup from a persona-scoped `COUNT` over persisted assistant turns (`cohesion_score IS NULL` vs not), so the figure reflects the persona's entire lifetime, not just the current process. A falling coverage percentage is the early warning that the system is regressing toward a plain model — the conversation still flows, but the signal that makes it *this* system is thinning.
 
 ### Loop
 
@@ -98,7 +100,10 @@ The cohesion block requirement is placed at the **top** of the system prompt and
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
 7. Assistant turn saved to MySQL + JSON archive
-8. If buffer > 25% of context limit → consolidation pass (LLM-driven, embeddings stored in Postgres)
+8. **Per-response capture** — the exchange is consolidated into weighted Postgres memory *every turn*, not at a token threshold. The instance's in-band cohesion score is the weight (`cohesion_peak`); the local model (`OLLAMA_CHAT_MODEL`) only writes the summary text and embeds it. Ollama never judges relevancy — that's the instance's job, already done in-band.
+9. **Lossless FIFO eviction** — when the hot buffer exceeds `CONTEXT_BUDGET_PCT` of the window, the oldest *already-captured* turns are dropped. Because capture ran on every exchange, anything old enough to evict is already weighted in Postgres — so the cliff's edge costs nothing. No model call at eviction.
+
+Why per-response: the cohesion-weighted edges are the entire differentiator. Under the old token-threshold trigger they didn't exist until ~50k tokens (hours of conversation) — meaning the system ran as a plain LLM until then. Capturing every response makes the weighting live from turn one. The hot buffer budget is deliberately *generous* (default 65%) because in-context recall is faster and lossless versus vector retrieval; retrieval is the fallback for what has aged off the cliff.
 
 ### Storage split
 
@@ -107,6 +112,16 @@ The cohesion block requirement is placed at the **top** of the system prompt and
 | **Postgres + pgvector** | Consolidated memories with embeddings — both cohesion and factual retrieval |
 | **MySQL** | Every turn (raw log) |
 | **data/archive/** | Full JSON per turn, never deleted |
+
+### Backfill
+
+If a conversation predates per-response capture (e.g. it ran under the old token-threshold trigger and never crossed it), its per-turn cohesion scores are in MySQL but were never turned into weighted Postgres memories. Replay them — no re-scoring, the stored scores are the weight:
+
+```bash
+tsx scripts/backfill.ts <persona_id>
+```
+
+It forms one weighted memory per rated assistant turn, skips turns already consolidated and turns with no cohesion rating, and reports the counts.
 
 ### Tiered storage
 
@@ -123,7 +138,7 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 |-----|---------|-------------|
 | `ANTHROPIC_API_KEY` | required | Anthropic API key |
 | `MODEL` | `claude-sonnet-4-6` | Model ID |
-| `CONTEXT_BUDGET_PCT` | `0.25` | Fraction of context window before consolidation triggers |
+| `CONTEXT_BUDGET_PCT` | `0.65` | Hot-buffer budget as a fraction of the window; over this, oldest captured turns are evicted (FIFO) |
 | `DB_HOST` | `127.0.0.1` | MySQL host |
 | `DB_PORT` | `3306` | MySQL port |
 | `DB_NAME` | `knightsrook_persona` | MySQL database |
@@ -135,6 +150,7 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_USER` | required | Postgres user |
 | `PG_PASS` | required | Postgres password |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
+| `OLLAMA_CHAT_MODEL` | `llama3.2` | Local model for consolidation summaries (mechanical only — never judges cohesion) |
 | `PERSONA_ID` | `default` | Active persona — all storage scoped to this ID |
 
 ## Tests
