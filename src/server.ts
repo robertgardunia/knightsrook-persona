@@ -4,7 +4,7 @@ import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { Substrate } from './substrate.js'
 import { generatePersonaName } from './names.js'
 
@@ -43,6 +43,24 @@ const server = createServer(app)
 const wss    = new WebSocketServer({ server })
 
 app.use(express.static(join(__dirname, '..', 'public')))
+app.use(express.json())
+
+const notesDir = join(__dirname, '..', 'data', 'notes')
+mkdirSync(notesDir, { recursive: true })
+
+function notesPath(personaId: string): string {
+  return join(notesDir, `${personaId.replace(/[^a-z0-9\-_]/gi, '_')}.md`)
+}
+
+app.get('/api/notes/:personaId', (req, res) => {
+  const p = notesPath(req.params.personaId)
+  res.json({ notes: existsSync(p) ? readFileSync(p, 'utf8') : '' })
+})
+
+app.post('/api/notes/:personaId', (req, res) => {
+  writeFileSync(notesPath(req.params.personaId), req.body.notes ?? '')
+  res.json({ ok: true })
+})
 
 // One Substrate per WebSocket connection, keyed by persona
 const substrates = new Map<string, Substrate>()

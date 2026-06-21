@@ -115,6 +115,32 @@
 
   .empty-state { color: var(--muted); font-size: 11px; text-align: center; padding: 20px 0; }
 
+  .notes-panel { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .notes-head {
+    background: var(--bg); padding: 6px 10px; cursor: pointer; user-select: none;
+    font-size: 10px; letter-spacing: 0.1em; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .notes-head:hover { color: var(--text); }
+  .notes-head .chevron { transition: transform 0.2s; font-size: 9px; }
+  .notes-head.open .chevron { transform: rotate(180deg); }
+  .notes-body { display: none; padding: 8px; }
+  .notes-body.open { display: flex; flex-direction: column; gap: 6px; }
+  .notes-body textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px; border-radius: 4px; font-family: inherit; font-size: 11px;
+    resize: vertical; min-height: 100px; line-height: 1.5;
+  }
+  .notes-body textarea:focus { outline: none; border-color: var(--accent); }
+  .notes-save {
+    align-self: flex-end; background: var(--accent); color: #fff; border: none;
+    border-radius: 4px; padding: 3px 10px; font-family: inherit; font-size: 11px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .notes-save:hover { background: var(--accent-dim); }
+  .notes-saved { font-size: 10px; color: var(--green); align-self: flex-end; opacity: 0; transition: opacity 0.3s; }
+  .notes-saved.show { opacity: 1; }
+
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -143,6 +169,18 @@
   </div>
 
   <div class="sidebar" id="sidebar">
+    <div class="notes-panel">
+      <div class="notes-head" id="notes-head">
+        NOTES <span class="chevron">▲</span>
+      </div>
+      <div class="notes-body" id="notes-body">
+        <textarea id="notes-text" placeholder="Notes about this persona…"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+          <span class="notes-saved" id="notes-saved">saved</span>
+          <button class="notes-save" id="notes-save">Save</button>
+        </div>
+      </div>
+    </div>
     <div class="empty-state" id="sidebar-empty">Telemetry appears after the first turn.</div>
   </div>
 </div>
@@ -161,8 +199,10 @@ ws.onmessage = (e) => {
   const msg = JSON.parse(e.data)
 
   if (msg.type === 'init') {
+    defaultPersonaId = msg.personaId
     personaEl.value = msg.personaId
     document.title = `PERSONA · ${msg.personaId}`
+    loadNotes(msg.personaId)
     return
   }
 
@@ -181,6 +221,40 @@ ws.onmessage = (e) => {
 }
 
 ws.onerror = () => addMessage('ERROR', 'WebSocket connection failed.', 'persona')
+
+// ── Notes ──
+const notesHead   = document.getElementById('notes-head')
+const notesBody   = document.getElementById('notes-body')
+const notesText   = document.getElementById('notes-text')
+const notesSave   = document.getElementById('notes-save')
+const notesSaved  = document.getElementById('notes-saved')
+
+notesHead.addEventListener('click', () => {
+  const open = notesBody.classList.toggle('open')
+  notesHead.classList.toggle('open', open)
+})
+
+async function loadNotes(personaId) {
+  const r = await fetch(`/api/notes/${encodeURIComponent(personaId)}`)
+  const d = await r.json()
+  notesText.value = d.notes || ''
+}
+
+async function saveNotes() {
+  const personaId = personaEl.value.trim() || defaultPersonaId
+  await fetch(`/api/notes/${encodeURIComponent(personaId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: notesText.value }),
+  })
+  notesSaved.classList.add('show')
+  setTimeout(() => notesSaved.classList.remove('show'), 1500)
+}
+
+notesSave.addEventListener('click', saveNotes)
+notesText.addEventListener('keydown', e => { if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNotes() } })
+
+let defaultPersonaId = 'default'
 
 function addMessage(role, text, cls) {
   const empty = messagesEl.querySelector('.empty-state')

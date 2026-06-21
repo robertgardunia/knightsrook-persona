@@ -70,6 +70,8 @@ Web-based chat UI at `http://localhost:5030`. Chat on the left, live telemetry s
 
 The persona ID is editable in the header — change it to switch personas without restarting.
 
+A collapsible **Notes** panel sits at the top of the sidebar. Click the header to expand it. Notes are per-persona, saved to `data/notes/<persona-id>.md`. Ctrl/Cmd+S saves from within the textarea.
+
 ## Architecture
 
 ### Signal split
