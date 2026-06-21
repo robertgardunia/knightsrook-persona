@@ -159,6 +159,13 @@ let thinking = null
 
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data)
+
+  if (msg.type === 'init') {
+    personaEl.value = msg.personaId
+    document.title = `PERSONA · ${msg.personaId}`
+    return
+  }
+
   if (thinking) { thinking.remove(); thinking = null }
 
   if (msg.type === 'response') {

@@ -14,6 +14,15 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 - **Archive** — JSON file per turn (`data/archive/`), never deleted
 - **Interface** — CLI REPL
 
+## Persona naming
+
+Each instance gets a generated name on first boot (`amber-raven`, `hollow-tide`, etc.) persisted to `.persona`. The name is used as the storage key — all MySQL rows, Postgres memories, and archive files are scoped to it.
+
+Name resolution order:
+1. `PERSONA_ID` env var (explicit override)
+2. `.persona` file (persisted from previous run)
+3. Auto-generated `adjective-noun` name (saved to `.persona` for next time)
+
 ## Multi-persona
 
 Each persona is completely air-gapped — separate MySQL rows, separate Postgres rows, separate archive directory. Set `PERSONA_ID` at startup:

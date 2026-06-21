@@ -4,9 +4,27 @@ import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { Substrate } from './substrate.js'
+import { generatePersonaName } from './names.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+function resolvePersonaId(): string {
+  // Explicit env var always wins
+  if (process.env.PERSONA_ID) return process.env.PERSONA_ID
+
+  // Persist generated name so it survives restarts
+  const persistPath = join(__dirname, '..', '.persona')
+  if (existsSync(persistPath)) {
+    return readFileSync(persistPath, 'utf8').trim()
+  }
+  const name = generatePersonaName()
+  writeFileSync(persistPath, name)
+  return name
+}
+
+const defaultPersonaId = resolvePersonaId()
 
 // @pattern:env-fail-fast
 const required = ['ANTHROPIC_API_KEY', 'DB_USER', 'DB_PASS', 'PG_USER', 'PG_PASS']
@@ -39,12 +57,15 @@ async function getSubstrate(personaId: string): Promise<Substrate> {
 }
 
 wss.on('connection', (ws: WebSocket) => {
+  // Send the resolved persona name so the UI can pre-fill it
+  ws.send(JSON.stringify({ type: 'init', personaId: defaultPersonaId }))
+
   ws.on('message', async (raw) => {
     let msg: { type: string; text?: string; personaId?: string }
     try { msg = JSON.parse(raw.toString()) } catch { return }
 
     if (msg.type === 'chat' && msg.text) {
-      const personaId = msg.personaId ?? 'default'
+      const personaId = msg.personaId || defaultPersonaId
       try {
         const substrate = await getSubstrate(personaId)
         const result = await substrate.respond(msg.text)
