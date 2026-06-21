@@ -123,6 +123,16 @@ tsx scripts/backfill.ts <persona_id>
 
 It forms one weighted memory per rated assistant turn, skips turns already consolidated and turns with no cohesion rating, and reports the counts.
 
+### Restart probe
+
+Drive one message to a persona on a **fresh process** (empty hot buffer) and print what retrieval drags back from Postgres — the demo that the entity survives context loss:
+
+```bash
+tsx scripts/probe.ts <persona_id> "Hey, I'm back — where did we land?"
+```
+
+It prints the cohesion memories matched (count + cosine similarities), the persona's response, and the new turn's cohesion score. With nothing in context, a healthy persona reconstructs the thread purely from its weighted memories.
+
 ### Tiered storage
 
 - **Hot** — current buffer (in-context)
