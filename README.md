@@ -149,8 +149,21 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_DB` | `persona` | Postgres database |
 | `PG_USER` | required | Postgres user |
 | `PG_PASS` | required | Postgres password |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (embeddings only) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama runtime endpoint (serves the local models below) |
+| `OLLAMA_COGNITION_MODEL` | `gemma3:12b` | Local "support brain" for introspection + chaos-goblin finding (reasoning, below the persona's tier) |
 | `PERSONA_ID` | `default` | Active persona — all storage scoped to this ID |
+
+### Model roster
+
+Capability tracks the job — each role gets exactly the model its work demands, no more:
+
+| Role | Model | Where | Why this tier |
+|------|-------|-------|---------------|
+| **Persona** (the entity) | Sonnet 4.6 | cloud | The actual "who" — present-tense cohesion judgment, the differentiator |
+| **Introspection / chaos-goblin finding** | Gemma 3 12B | local | Reasons over the substrate to *find* incoherence (not solve it); sits below the entity's tier |
+| **Embeddings** | `nomic-embed-text` | local | Pure measurement — a purpose-built "ruler," not a brain |
+
+Chaos-goblin *pokes* (corrupt a score, malform a block, reorder turns) are plain deterministic code — no model. The local cognitive model only does the *finding* — recognizing abstract weirdness to flag. Ollama is the runtime that serves the two local models; it is not itself a model.
 
 ## Tests
 
