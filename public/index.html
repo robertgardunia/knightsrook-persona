@@ -266,6 +266,28 @@ const sidebarEl   = document.getElementById('sidebar')
 const personaEl   = document.getElementById('personaId')
 
 let thinking = null
+let streamText = ''
+let streamToolCalls = [] // [{name, done, result}]
+
+function renderThinking() {
+  if (!thinking) return
+  const contentEl = thinking.querySelector('.stream-content')
+  if (!contentEl) return
+  const toolHtml = streamToolCalls.map(t => {
+    const statusColor = t.done ? 'var(--green)' : 'var(--yellow)'
+    const resultHtml = t.result != null
+      ? `<div style="color:var(--muted);font-size:10px;margin-top:2px;white-space:pre-wrap;word-break:break-all">${escHtml(String(t.result).slice(0, 300))}${String(t.result).length > 300 ? '…' : ''}</div>`
+      : ''
+    return `<div style="margin:4px 0;padding:4px 6px;background:var(--bg);border-radius:4px;border-left:2px solid ${statusColor}">
+      <span style="color:${statusColor};font-size:10px;font-weight:600">${escHtml(t.name)}</span>
+      ${t.done ? '' : ' <span style="color:var(--yellow);font-size:9px;animation:pulse 1s infinite">running…</span>'}
+      ${resultHtml}
+    </div>`
+  }).join('')
+  const textHtml = streamText ? `<div style="margin-top:${streamToolCalls.length ? '6px' : '0'}">${escHtml(streamText)}</div>` : ''
+  contentEl.innerHTML = toolHtml + textHtml || 'thinking…'
+  messagesEl.scrollTop = messagesEl.scrollHeight
+}
 
 // ── Collapse state ──────────────────────────────────────────────────────────
 const STORE = {
@@ -362,7 +384,26 @@ ws.onmessage = (e) => {
     loadHistory(msg.personaId)
     return
   }
+
+  if (msg.type === 'stream') {
+    const ev = msg.event
+    if (ev.type === 'text_delta') {
+      streamText += ev.text
+      renderThinking()
+    } else if (ev.type === 'tool_use') {
+      streamToolCalls.push({ name: ev.name, done: false, result: null })
+      renderThinking()
+    } else if (ev.type === 'tool_result') {
+      const last = streamToolCalls[streamToolCalls.length - 1]
+      if (last) { last.done = true; last.result = ev.result }
+      renderThinking()
+    }
+    return
+  }
+
   if (thinking) { thinking.remove(); thinking = null }
+  streamText = ''
+  streamToolCalls = []
   if (msg.type === 'response') {
     const r = msg.telemetry.retrieval
     pushChartPoint(r.cohesion.similarities, r.factual.count, Date.now())
@@ -410,7 +451,7 @@ notesText.addEventListener('keydown', e => { if (e.key === 's' && (e.ctrlKey || 
 let defaultPersonaId = 'default'
 
 // ── Chat ─────────────────────────────────────────────────────────────────────
-function addMessage(role, text, cls, telemetry) {
+function addMessage(role, text, cls, telemetry, rawHtml = false) {
   const empty = messagesEl.querySelector('.empty-state')
   if (empty) empty.remove()
   const el = document.createElement('div')
@@ -423,7 +464,8 @@ function addMessage(role, text, cls, telemetry) {
     const rBar = buildRetrievalLabel(r.cohesion.count, r.cohesion.similarities, r.factual.count)
     footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${telemetry.turnNumber}</span>`
   }
-  el.innerHTML = `<div class="msg-header">${footer}</div>${escHtml(text)}`
+  const body = rawHtml ? text : escHtml(text)
+  el.innerHTML = `<div class="msg-header">${footer}</div>${body}`
   messagesEl.appendChild(el)
   messagesEl.scrollTop = messagesEl.scrollHeight
   return el
@@ -442,7 +484,9 @@ function send() {
   inputEl.style.height = '44px'
   sendBtn.disabled = true
   inputEl.disabled = true
-  thinking = addMessage('PERSONA', 'thinking…', 'persona thinking')
+  streamText = ''
+  streamToolCalls = []
+  thinking = addMessage('PERSONA', '<span class="stream-content">thinking…</span>', 'persona thinking', null, true)
   ws.send(JSON.stringify({ type: 'chat', text, personaId }))
 }
 sendBtn.onclick = send

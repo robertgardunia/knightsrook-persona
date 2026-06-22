@@ -6,7 +6,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import mysql from 'mysql2/promise'
-import { Substrate } from './substrate.js'
+import { Substrate, type SubstrateEvent } from './substrate.js'
 import { generatePersonaName } from './names.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -112,7 +112,9 @@ wss.on('connection', (ws: WebSocket) => {
       const personaId = msg.personaId || defaultPersonaId
       try {
         const substrate = await getSubstrate(personaId)
-        const result = await substrate.respond(msg.text)
+        const result = await substrate.respond(msg.text, (event: SubstrateEvent) => {
+          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stream', event }))
+        })
         ws.send(JSON.stringify({ type: 'response', text: result.visible, telemetry: result.telemetry, importanceBanner: result.importanceBanner }))
       } catch (err: any) {
         ws.send(JSON.stringify({ type: 'error', text: err.message }))

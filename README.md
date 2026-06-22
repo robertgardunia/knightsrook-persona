@@ -7,7 +7,7 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 ## Stack
 
 - **Runtime** — Node.js 20+, TypeScript
-- **LLM** — Anthropic SDK (`claude-sonnet-4-6` by default; swap via `MODEL` env var), via `beta.messages.create` with MCP connector enabled
+- **LLM** — Anthropic SDK (`claude-sonnet-4-6` by default; swap via `MODEL` env var), streamed via `beta.messages.stream` with MCP connector enabled
 - **MCP** — Knightsrook Knowledge Base at `https://mcp.knightsrook.com/mcp` (`knightsrook` server, `mcp-client-2025-11-20` beta)
 - **Cohesion storage** — Postgres + pgvector (Docker) — vector similarity retrieval via `nomic-embed-text`
 - **Factual storage** — MySQL — structured turn log + importance-tagged recall
@@ -105,7 +105,7 @@ Every `Turn` carries a `source` field (`'human' | 'internal' | 'self'`) for attr
 3. Two-path retrieval:
    - **Cohesion path** — vector cosine similarity in Postgres (after embedding completes)
    - **Factual path** — keyword overlap against importance fields in Postgres (runs in parallel with embedding)
-4. LLM called with substrate-curated system prompt
+4. LLM called with substrate-curated system prompt — streamed; tool_use blocks and text deltas arrive in real time and are piped to the chat window as they happen
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
 7. Assistant turn saved to MySQL + JSON archive

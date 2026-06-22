@@ -23,6 +23,11 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
+export type SubstrateEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_use'; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result: unknown }
+
 export type SubstrateResponse = {
   visible: string
   importanceBanner: string
@@ -84,7 +89,7 @@ export class Substrate {
     return dropped
   }
 
-  async respond(userMessage: string): Promise<SubstrateResponse> {
+  async respond(userMessage: string, onEvent?: (e: SubstrateEvent) => void): Promise<SubstrateResponse> {
     this.turnNumber++
     const contextBudget = getContextLimit(this.model)
 
@@ -137,8 +142,8 @@ export class Substrate {
       cycles: 0,
     })
 
-    // Call LLM via MCP beta — substrate can access external tools (knightsrook KB)
-    const response = await this.client.beta.messages.create({
+    // Stream LLM via MCP beta — events piped to caller in real time
+    const stream = await this.client.beta.messages.stream({
       model: this.model,
       max_tokens: 4096,
       system: systemPrompt,
@@ -151,7 +156,29 @@ export class Substrate {
         { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
       ],
       betas: ['mcp-client-2025-11-20'],
+    } as any)
+
+    // Pipe stream events to caller so the UI can show work in progress
+    stream.on('text', (text) => {
+      onEvent?.({ type: 'text_delta', text })
     })
+    stream.on('event', (event: any) => {
+      if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+        onEvent?.({ type: 'tool_use', name: event.content_block.name, input: {} })
+      }
+      if (event.type === 'content_block_stop') {
+        // tool_result blocks arrive as content blocks in MCP beta
+        const block = event.content_block as any
+        if (block?.type === 'tool_result') {
+          const result = Array.isArray(block.content)
+            ? block.content.map((c: any) => c.text ?? '').join('')
+            : block.content
+          onEvent?.({ type: 'tool_result', name: '', result })
+        }
+      }
+    })
+
+    const response = await stream.finalMessage()
 
     const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
     let { visible: candidate, cohesion } = parseCohesion(rawText)
