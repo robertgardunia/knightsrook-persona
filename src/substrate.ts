@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
-import type { Turn, TurnTelemetry, ConsolidationTelemetry } from './types.js'
+import type { Turn, TurnTelemetry, ConsolidationTelemetry, InjectedMemory } from './types.js'
 import { Storage } from './storage.js'
 import { parseCohesion } from './cohesion.js'
 import { extractImportance, formatImportanceBanner } from './importance.js'
@@ -115,6 +115,21 @@ export class Substrate {
         ...factualMems.flatMap(m => m.mergedDecisions.slice(0, 2)),
       ])
     ].slice(0, 10).join('\n')
+
+    const injectedMemories: InjectedMemory[] = [
+      ...cohesionMems.map(m => ({ cluster: m.cluster, summary: m.summary, similarity: m.similarity, source: 'cohesion' as const })),
+      ...factualMems.map(m => ({ cluster: m.cluster, summary: m.summary, source: 'factual' as const })),
+    ]
+
+    if (injectedMemories.length > 0) {
+      console.log(`\n[INJECTED MEMORIES — turn ${this.turnNumber}]`)
+      for (const m of injectedMemories) {
+        const sim = m.similarity != null ? ` sim=${m.similarity.toFixed(3)}` : ''
+        console.log(`  [${m.source}${sim}] [${m.cluster}] ${m.summary.slice(0, 120)}`)
+      }
+    } else {
+      console.log(`\n[INJECTED MEMORIES — turn ${this.turnNumber}] none — running cold LLM`)
+    }
 
     const systemPrompt = buildSystemPrompt(cohesionContext, factualContext, {
       catches: 0,
@@ -252,6 +267,7 @@ export class Substrate {
         archivePath: `data/archive/${this.personaId}/`,
       },
       consolidation: consolidationTelemetry,
+      injectedMemories,
     }
 
     return {

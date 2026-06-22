@@ -58,11 +58,14 @@ Requires: Docker, Ollama running locally, MySQL running locally.
 
 Web-based chat UI at `http://localhost:5030`. Chat on the left, live telemetry sidebar on the right.
 
+**Influence chart** — full-width stacked area strip below the header. Green = semantic influence (avg cosine sim of memories above the 0.80 threshold), blue = factual keyword bump. Grey background = cold LLM. Time labels along the bottom. Seeds from history on page load so the full session arc is visible immediately.
+
 **Sidebar panels:**
 - **Session** — turn number, active persona
 - **Cohesion** — score (1-10), bar, drivers, shifts
 - **Context** — token usage vs budget, consolidation threshold marker
 - **Retrieval** — cohesion path (count + cosine similarities), factual path (count + keyword hits)
+- **Injected** — actual memory text that went into the system prompt this turn (cluster, similarity, summary). "cold LLM" in red when nothing was retrieved.
 - **Normalization** — contradictions flagged, additions integrated, length delta
 - **Storage** — turn IDs, archive path
 - **Importance** — entity/fact/preference/decision counts

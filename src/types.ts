@@ -95,6 +95,13 @@ export type CohesionHealth = {
   coveragePct: number   // ratedTurns / (ratedTurns + unratedTurns)
 }
 
+export type InjectedMemory = {
+  cluster: string
+  summary: string
+  similarity?: number
+  source: 'cohesion' | 'factual'
+}
+
 export type TurnTelemetry = {
   turnNumber: number
   personaId: string
@@ -107,4 +114,5 @@ export type TurnTelemetry = {
   normalization: NormalizationTelemetry
   storage: StorageTelemetry
   consolidation: ConsolidationTelemetry
+  injectedMemories: InjectedMemory[]
 }
