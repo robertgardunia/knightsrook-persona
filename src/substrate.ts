@@ -145,7 +145,7 @@ export class Substrate {
     // Stream LLM via MCP beta — iterate raw chunks so we see mcp_tool_use/mcp_tool_result
     const stream = this.client.messages.stream({
       model: this.model,
-      max_tokens: 4096,
+      max_tokens: 16000,
       system: systemPrompt,
       messages: this.buffer.map(t => ({
         role: t.role,
@@ -157,34 +157,57 @@ export class Substrate {
       ],
     } as any, { headers: { 'anthropic-beta': 'mcp-client-2025-11-20' } })
 
-    // Iterate raw SSE chunks — mcp_tool_use/mcp_tool_result only surface here
+    // Iterate raw SSE chunks — mcp_tool_use/mcp_tool_result only surface here.
+    // Accumulate content blocks as we go so we don't exhaust the iterator before finalMessage().
     const pendingToolNames = new Map<number, string>()
+    const contentBlocks: any[] = []
+    let currentBlockIndex = -1
+
     for await (const chunk of stream as any) {
       if (chunk.type === 'content_block_start') {
-        const block = chunk.content_block as any
-        if (block?.type === 'mcp_tool_use') {
+        const block = { ...chunk.content_block }
+        contentBlocks[chunk.index] = block
+        currentBlockIndex = chunk.index
+
+        if (block.type === 'mcp_tool_use') {
           pendingToolNames.set(chunk.index, block.name)
           onEvent?.({ type: 'tool_use', name: block.name, input: {} })
         }
-        if (block?.type === 'mcp_tool_result') {
+        if (block.type === 'mcp_tool_result') {
           const name = pendingToolNames.get(chunk.index - 1) ?? ''
           const result = Array.isArray(block.content)
             ? block.content.map((c: any) => c.text ?? '').join('')
             : block.content ?? ''
           onEvent?.({ type: 'tool_result', name, result })
         }
-        if (block?.type === 'text') {
-          // text block starting — subsequent text_delta events will flow via stream.on('text')
+      }
+      if (chunk.type === 'content_block_delta') {
+        const block = contentBlocks[chunk.index]
+        if (chunk.delta?.type === 'text_delta') {
+          if (block) block.text = (block.text ?? '') + chunk.delta.text
+          onEvent?.({ type: 'text_delta', text: chunk.delta.text })
+        }
+        if (chunk.delta?.type === 'input_json_delta' && block) {
+          block._inputJson = (block._inputJson ?? '') + chunk.delta.partial_json
         }
       }
-      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
-        onEvent?.({ type: 'text_delta', text: chunk.delta.text })
+    }
+
+    // Finalise input on tool blocks
+    for (const block of contentBlocks) {
+      if (block?._inputJson) {
+        try { block.input = JSON.parse(block._inputJson) } catch {}
+        delete block._inputJson
       }
     }
 
     const response = await stream.finalMessage()
 
-    const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
+    // Concatenate all text blocks — multiple text blocks appear when tool calls interleave
+    const rawText = (response.content as any[])
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text ?? '')
+      .join('')
     let { visible: candidate, cohesion } = parseCohesion(rawText)
 
     // Extract MCP tool calls for telemetry + buffer replay
@@ -234,7 +257,7 @@ export class Substrate {
         ],
         betas: ['mcp-client-2025-11-20'],
       })
-      const retryText = (retry.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
+      const retryText = (retry.content as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.text ?? '').join('')
       cohesion = parseCohesion(retryText).cohesion
       recovered = cohesion !== null
     }
