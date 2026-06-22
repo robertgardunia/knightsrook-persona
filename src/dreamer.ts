@@ -238,7 +238,7 @@ export class Dreamer {
       `Reply with JSON only, no other text:\n` +
       `{"attempt":"...","confidence":<integer 1-10>,"resolved":<true or false>}`
 
-    const raw = await cognize(prompt, { temperature: 0.5, maxTokens: 200 })
+    const raw = await cognize(prompt, { temperature: 0.5, maxTokens: 400 })
 
     try {
       const parsed = JSON.parse(extractJson(raw)) as {
