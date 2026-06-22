@@ -18,12 +18,19 @@ export type NormalizationActions = {
   additionsIntegrated: string[]
 }
 
+export type McpToolCall = {
+  name: string
+  input: Record<string, unknown>
+  result?: unknown
+}
+
 export type Turn = {
   id: string
   role: Role
   source: 'human' | 'internal' | 'self'
   content: string
   rawLLMContent?: string
+  rawContent?: unknown[]  // full content block array when MCP tool use occurred
   cohesion?: CohesionRating
   importance?: ImportanceTags
   normalizationApplied?: NormalizationActions
@@ -116,4 +123,5 @@ export type TurnTelemetry = {
   storage: StorageTelemetry
   consolidation: ConsolidationTelemetry
   injectedMemories: InjectedMemory[]
+  mcpToolCalls: McpToolCall[]
 }

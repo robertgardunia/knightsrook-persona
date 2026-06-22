@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
-import type { Turn, TurnTelemetry, ConsolidationTelemetry, InjectedMemory } from './types.js'
+import type { Turn, TurnTelemetry, ConsolidationTelemetry, InjectedMemory, McpToolCall } from './types.js'
 import { Storage } from './storage.js'
 import { parseCohesion } from './cohesion.js'
 import { extractImportance, formatImportanceBanner } from './importance.js'
@@ -142,7 +142,11 @@ export class Substrate {
       model: this.model,
       max_tokens: 4096,
       system: systemPrompt,
-      messages: this.buffer.map(t => ({ role: t.role, content: t.content })),
+      messages: this.buffer.map(t => ({
+        role: t.role,
+        content: (t.rawContent ?? t.content) as any,
+      })),
+      tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
       mcp_servers: [
         { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
       ],
@@ -151,6 +155,27 @@ export class Substrate {
 
     const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
     let { visible: candidate, cohesion } = parseCohesion(rawText)
+
+    // Extract MCP tool calls for telemetry + buffer replay
+    const mcpToolCalls: McpToolCall[] = (response.content as any[])
+      .filter((b: any) => b.type === 'tool_use')
+      .map((b: any) => {
+        const result = (response.content as any[]).find(
+          (r: any) => r.type === 'tool_result' && r.tool_use_id === b.id
+        )
+        return {
+          name: b.name as string,
+          input: b.input as Record<string, unknown>,
+          result: result?.content,
+        }
+      })
+
+    if (mcpToolCalls.length > 0) {
+      console.log(`\n[MCP TOOL CALLS — turn ${this.turnNumber}]`)
+      for (const c of mcpToolCalls) {
+        console.log(`  ${c.name}(${JSON.stringify(c.input).slice(0, 120)})`)
+      }
+    }
 
     // Push back on a missing rating rather than fabricating one. The block is
     // non-negotiable (see prompts.ts); if the model omitted it, demand it once
@@ -163,7 +188,7 @@ export class Substrate {
         max_tokens: 256,
         system: systemPrompt,
         messages: [
-          ...this.buffer.map(t => ({ role: t.role, content: t.content })),
+          ...this.buffer.map(t => ({ role: t.role, content: (t.rawContent ?? t.content) as any })),
           { role: 'assistant', content: rawText },
           {
             role: 'user',
@@ -172,6 +197,7 @@ export class Substrate {
               'Reply with ONLY that block (the <cohesion>…</cohesion> JSON) rating that response. Nothing else.',
           },
         ],
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
         mcp_servers: [
           { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
         ],
@@ -207,6 +233,7 @@ export class Substrate {
       source: 'self',
       content: normalized,
       rawLLMContent: candidate,
+      rawContent: mcpToolCalls.length > 0 ? (response.content as unknown[]) : undefined,
       cohesion: cohesion ?? undefined,
       importance: importanceTags,
       normalizationApplied: actions,
@@ -278,6 +305,7 @@ export class Substrate {
       },
       consolidation: consolidationTelemetry,
       injectedMemories,
+      mcpToolCalls,
     }
 
     return {

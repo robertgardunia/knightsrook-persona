@@ -66,6 +66,7 @@ Web-based chat UI at `http://localhost:5030`. Chat on the left, live telemetry s
 - **Cohesion** — score (1-10), bar, drivers, shifts
 - **Context** — token usage vs budget, consolidation threshold marker
 - **Retrieval** — cohesion path (count + cosine similarities), factual path (count + keyword hits)
+- **MCP** — appears (green) when the persona called a Knightsrook KB tool this turn. Shows tool name, input, and result for each call.
 - **Injected** — actual memory text that went into the system prompt this turn (cluster, similarity, summary). "cold LLM" in red when nothing was retrieved.
 - **Normalization** — contradictions flagged, additions integrated, length delta
 - **Storage** — turn IDs, archive path
