@@ -81,12 +81,25 @@ export class Dreamer {
 
     if (!result) return
 
-    // Save as internal turn — not pushed to hot buffer, not seen in conversation
+    // Save as internal turn — not pushed to hot buffer, not seen in conversation.
+    // Attach a cohesion rating from Gemma's self-assessment so captureTurn
+    // embeds it and it becomes retrievable via vector similarity.
     const internalTurn = {
       id: ulid(),
       role: 'assistant' as const,
       source: 'internal' as const,
       content: result.thought,
+      cohesion: {
+        score: result.coherence,
+        drivers: result.type === 'goblin'
+          ? `goblin poke: ${result.thought.slice(0, 60)}`
+          : `dream association: ${result.thought.slice(0, 60)}`,
+        shifts: result.type === 'goblin' && result.resolved
+          ? 'broken edge repaired'
+          : result.type === 'goblin'
+            ? 'broken edge unresolved'
+            : 'new association formed',
+      },
       tokens: Math.ceil(result.thought.length / 4),
       timestamp: Date.now(),
     }
