@@ -141,11 +141,11 @@
   .notes-saved { font-size: 10px; color: var(--green); align-self: flex-end; opacity: 0; transition: opacity 0.3s; }
   .notes-saved.show { opacity: 1; }
 
-  .msg-footer {
-    margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
-    font-size: 10px; color: var(--muted);
-    display: flex; justify-content: space-between; align-items: center;
+  .msg-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    margin-bottom: 8px; padding: 6px 0; border-bottom: 1px solid var(--border);
   }
+  .msg-header .footer-left, .msg-header .footer-turn { font-size: 10px; color: var(--muted); }
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -220,13 +220,9 @@ async function loadHistory(personaId) {
         ? (Array.isArray(t.retrieval_cohesion_sims) ? t.retrieval_cohesion_sims : JSON.parse(t.retrieval_cohesion_sims))
         : []
       const rBar = buildRetrievalLabel(t.retrieval_cohesion_count, sims, t.retrieval_factual_count)
-      footer = `<div class="msg-footer">
-        <span>PERSONA · ${ts}</span>
-        ${rBar}
-        <span>turn #${t.turn_number}</span>
-      </div>`
+      footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${t.turn_number}</span>`
     }
-    el.innerHTML = `<div class="role">${role}</div>${footer}${escHtml(t.content)}`
+    el.innerHTML = `<div class="msg-header">${footer}</div>${escHtml(t.content)}`
     messagesEl.appendChild(el)
   }
   messagesEl.scrollTop = messagesEl.scrollHeight
@@ -307,14 +303,10 @@ function addMessage(role, text, cls, telemetry) {
     const ts = `${(_d.getMonth()+1).toString().padStart(2,'0')}/${_d.getDate().toString().padStart(2,'0')}/${_d.getFullYear()} ${_d.getHours().toString().padStart(2,'0')}:${_d.getMinutes().toString().padStart(2,'0')}`
     const r = telemetry.retrieval
     const rBar = buildRetrievalLabel(r.cohesion.count, r.cohesion.similarities, r.factual.count)
-    footer = `<div class="msg-footer">
-      <span>PERSONA · ${ts}</span>
-      ${rBar}
-      <span>turn #${telemetry.turnNumber}</span>
-    </div>`
+    footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${telemetry.turnNumber}</span>`
   }
 
-  el.innerHTML = `<div class="role">${role}</div>${footer}${escHtml(text)}`
+  el.innerHTML = `<div class="msg-header">${footer}</div>${escHtml(text)}`
   messagesEl.appendChild(el)
   messagesEl.scrollTop = messagesEl.scrollHeight
   return el
