@@ -37,6 +37,16 @@ export function buildSystemPrompt(
     'importance indexing, and a normalization layer.'
   )
 
+  parts.push('')
+  parts.push(
+    '[KB TOOL USE — REQUIRED BEHAVIOR]\n' +
+    'You have access to the Knightsrook knowledge base. When using it:\n' +
+    '- Fetch ONE topic at a time. Never batch multiple get_topic calls in parallel.\n' +
+    '- After each fetch, synthesize what you learned before deciding whether to fetch another.\n' +
+    '- Search first, then fetch only the entries that are actually relevant.\n' +
+    '- Tell the user what you found after each fetch, do not silently accumulate.'
+  )
+
   if (cohesionContext) {
     parts.push('')
     parts.push('Recent context that defines who you are now:')

@@ -105,7 +105,7 @@ Every `Turn` carries a `source` field (`'human' | 'internal' | 'self'`) for attr
 3. Two-path retrieval:
    - **Cohesion path** — vector cosine similarity in Postgres (after embedding completes)
    - **Factual path** — keyword overlap against importance fields in Postgres (runs in parallel with embedding)
-4. LLM called with substrate-curated system prompt — streamed via raw SSE chunk iteration; `mcp_tool_use` and `mcp_tool_result` blocks surface as they arrive and are piped to the chat window in real time
+4. LLM called with substrate-curated system prompt (KB tool use: one topic at a time, synthesize before fetching next) — streamed via raw SSE chunk iteration; `mcp_tool_use` and `mcp_tool_result` blocks surface as they arrive and are piped to the chat window in real time
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
 7. Assistant turn saved to MySQL + JSON archive
@@ -156,7 +156,7 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | Var | Default | Description |
 |-----|---------|-------------|
 | `ANTHROPIC_API_KEY` | required | Anthropic API key |
-| `MODEL` | `claude-sonnet-4-6` | Model ID (max_tokens: 16000 to support multi-tool parallel responses) |
+| `MODEL` | `claude-sonnet-4-6` | Model ID |
 | `CONTEXT_BUDGET_PCT` | `0.65` | Hot-buffer budget as a fraction of the window; over this, oldest captured turns are evicted (FIFO — lossless, all evicted turns are already in Postgres) |
 | `DB_HOST` | `127.0.0.1` | MySQL host |
 | `DB_PORT` | `3306` | MySQL port |
