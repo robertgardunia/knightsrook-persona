@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import mysql from 'mysql2/promise'
 import { Substrate, type SubstrateEvent } from './substrate.js'
+import { Dreamer } from './dreamer.js'
 import { generatePersonaName } from './names.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -88,14 +89,29 @@ app.post('/api/notes/:personaId', (req, res) => {
   res.json({ ok: true })
 })
 
-// One Substrate per WebSocket connection, keyed by persona
+// One Substrate + Dreamer per persona, keyed by persona ID
 const substrates = new Map<string, Substrate>()
+const dreamers   = new Map<string, Dreamer>()
+
+// Broadcast a dream event to all connected clients for a given persona
+function broadcastDreamEvent(personaId: string, payload: object) {
+  const msg = JSON.stringify({ type: 'dream_event', personaId, ...payload })
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) client.send(msg)
+  })
+}
 
 async function getSubstrate(personaId: string): Promise<Substrate> {
   if (!substrates.has(personaId)) {
     const s = new Substrate(process.env.ANTHROPIC_API_KEY!, model, budgetPct, personaId)
     await s.init()
     substrates.set(personaId, s)
+
+    const dreamer = new Dreamer(s, s.getStorage(), (event) => {
+      broadcastDreamEvent(personaId, { event })
+    })
+    dreamer.start()
+    dreamers.set(personaId, dreamer)
   }
   return substrates.get(personaId)!
 }

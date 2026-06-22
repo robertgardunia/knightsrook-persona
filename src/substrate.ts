@@ -100,6 +100,13 @@ export class Substrate {
     return this.mind.snapshot()
   }
 
+  // Dream loop interface — called by Dreamer, not by conversation turns
+  tickDreamBudget(tokens: number): void { this.mind.tickBudget(tokens) }
+  recordDreamCohesion(score: number): void { this.mind.recordCohesion(score, false) }
+  resolveGoblin(id: string): void { this.mind.resolveGoblin(id) }
+  fadeGoblin(id: string): void { this.mind.fadeGoblin(id) }
+  getStorage(): Storage { return this.storage }
+
   async respond(userMessage: string, onEvent?: (e: SubstrateEvent) => void): Promise<SubstrateResponse> {
     this.turnNumber++
     const contextBudget = getContextLimit(this.model)

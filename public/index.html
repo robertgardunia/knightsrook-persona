@@ -434,6 +434,10 @@ ws.onmessage = (e) => {
     pushChartPoint(r.cohesion.similarities, r.factual.count, Date.now())
     addMessage('PERSONA', frozenTrace + escHtml(msg.text), 'persona', msg.telemetry, true)
     renderSidebar(msg.telemetry, msg.importanceBanner)
+  } else if (msg.type === 'dream_event') {
+    // Live dream/goblin cycle update — refresh MIND STATE panel without a full sidebar render
+    updateMindStatePanel(msg.event.mindState, msg.event.result)
+    return
   } else if (msg.type === 'error') {
     addMessage('ERROR', msg.text, 'persona')
   }
@@ -640,7 +644,7 @@ const STATE_COLORS = {
   refractory:   'var(--red)',
 }
 
-function renderMindState(ms) {
+function renderMindState(ms, lastCycle) {
   if (!ms) return ''
   const stateColor = STATE_COLORS[ms.state] || 'var(--muted)'
 
@@ -708,8 +712,36 @@ function renderMindState(ms) {
     <div style="margin-bottom:8px">${goblinsHtml}</div>
     <div style="font-size:10px;color:var(--muted);margin-bottom:3px">events</div>
     ${eventsHtml}
+    ${lastCycle ? `
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:3px">${lastCycle.type === 'goblin' ? 'goblin poke' : 'dream thought'}</div>
+    <div style="font-size:10px;color:${lastCycle.type === 'goblin' ? 'var(--yellow)' : 'var(--fg)'};line-height:1.5;padding:4px 0;border-top:1px solid var(--border)">
+      ${escHtml(lastCycle.thought.slice(0, 200))}${lastCycle.thought.length > 200 ? '…' : ''}
+      <span style="color:var(--muted)"> (${lastCycle.coherence}/10)</span>
+      ${lastCycle.resolved === true ? '<span style="color:var(--green)"> ✓ resolved</span>' : ''}
+    </div>` : ''}
   `
   return panel('MIND STATE', `<span class="badge" style="background:transparent;color:${stateColor}">${ms.state}</span>`, body)
+}
+
+// Live update of the MIND STATE panel from a dream_event without full sidebar re-render.
+// Finds the existing panel in the right sidebar and replaces just its content.
+let lastDreamThought = null
+function updateMindStatePanel(ms, cycleResult) {
+  if (!ms) return
+  lastDreamThought = cycleResult
+  const rightSidebar = document.getElementById('right-sidebar')
+  if (!rightSidebar) return
+  // Replace the MIND STATE panel HTML inside the sidebar
+  const newPanelHtml = renderMindState(ms, cycleResult)
+  const tmp = document.createElement('div')
+  tmp.innerHTML = newPanelHtml
+  const newPanel = tmp.firstElementChild
+  // Find existing MIND STATE panel by data attribute or header text
+  const existing = [...rightSidebar.querySelectorAll('.panel')].find(p => {
+    const head = p.querySelector('.panel-head')
+    return head && head.textContent.trim().startsWith('MIND STATE')
+  })
+  if (existing && newPanel) existing.replaceWith(newPanel)
 }
 
 // ── Sidebar renderer ──────────────────────────────────────────────────────────
@@ -772,7 +804,7 @@ function renderSidebar(t, importanceBanner) {
   html += panel('COHESION', `<span class="badge">${c ? cScore + '/10' : 'n/a'}</span>`, cohesionBody)
 
   // MIND STATE
-  html += renderMindState(t.mindState)
+  html += renderMindState(t.mindState, lastDreamThought)
 
   // CONTEXT
   const ctxPct = (t.contextPct * 100).toFixed(1)

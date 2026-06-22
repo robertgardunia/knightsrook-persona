@@ -307,6 +307,20 @@ export class Storage {
     return scored.map(({ mem, hits }: any) => ({ ...mem, keywordHits: hits }))
   }
 
+  // Recent high-cohesion memories — used by the dream loop for free association.
+  // No embedding needed; ordered by cohesion_peak DESC then recency so the
+  // dreamer starts with the most meaningful material.
+  async retrieveRecentHighCohesion(limit = 6): Promise<ConsolidatedMemory[]> {
+    const { rows } = await this.pg.query(
+      `SELECT * FROM consolidated_memories
+       WHERE persona_id = $1 AND embedding IS NOT NULL
+       ORDER BY cohesion_peak DESC, created_at DESC
+       LIMIT $2`,
+      [this.personaId, limit]
+    )
+    return rows.map((r: any) => this.rowToMemory(r))
+  }
+
   private rowToMemory = (row: any): ConsolidatedMemory => ({
     id: row.id,
     cluster: row.cluster,

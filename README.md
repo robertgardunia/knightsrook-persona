@@ -139,6 +139,16 @@ A `MindState` instance runs alongside every `Substrate`. It tracks:
 
 All state is visible in real time in the **MIND STATE** right-sidebar panel and exposed via `mindState` in every `TurnTelemetry` payload.
 
+### Dream loop
+
+A `Dreamer` instance starts alongside every `Substrate`. It runs on a background timer (default 45s, configurable via `DREAM_INTERVAL_MS`) and executes one cognitive cycle per tick:
+
+- **Dream state** — pulls recent high-cohesion memories and asks the local Gemma 3 12B model to free-associate across them. Output saved as `source:'internal'` turn, consolidated into Postgres memory, idea budget ticked.
+- **Goblin state** — for each active goblin, asks Gemma to reason about the broken edge and attempt repair. If confidence ≥ 6 and resolved, goblin resolves. After `GOBLIN_MAX_ATTEMPTS` (default 3) failed attempts, the goblin fades.
+- **Conversation / refractory** — yields immediately, does nothing.
+
+Dream cycles produce memories retrievable in future conversations. Goblin pokes appear in the MIND STATE panel under "goblin poke" and the last dream thought appears under "dream thought". State updates broadcast live to all connected clients via `dream_event` WebSocket messages.
+
 ### Backfill
 
 If a conversation predates per-response capture (e.g. it ran under the old token-threshold trigger and never crossed it), its per-turn cohesion scores are in MySQL but were never turned into weighted Postgres memories. Replay them — no re-scoring, the stored scores are the weight:
