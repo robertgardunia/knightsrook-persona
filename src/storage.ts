@@ -307,20 +307,33 @@ export class Storage {
     return scored.map(({ mem, hits }: any) => ({ ...mem, keywordHits: hits }))
   }
 
-  // Recent high-cohesion memories — used by the dream loop for free association.
-  // No embedding needed; ordered by cohesion_peak DESC then recency so the
-  // dreamer starts with the most meaningful material.
-  // Dream pool — intentionally biased toward low-cohesion and less-retrieved
-  // material. High-cohesion memories are already strong; dream state should
-  // work on weak edges, underconnected material, and things that didn't land
-  // cleanly the first time. Lower cohesion = more room to grow.
-  async retrieveDreamPool(limit = 20): Promise<ConsolidatedMemory[]> {
+  // Dream seed — one random memory as the chain entry point.
+  // No pre-filtering by cohesion; the association chain finds its own path.
+  async retrieveDreamSeed(): Promise<ConsolidatedMemory | null> {
     const { rows } = await this.pg.query(
       `SELECT * FROM consolidated_memories
        WHERE persona_id = $1 AND embedding IS NOT NULL
-       ORDER BY cohesion_peak ASC, retrieval_count ASC, created_at ASC
-       LIMIT $2`,
-      [this.personaId, limit]
+       ORDER BY RANDOM()
+       LIMIT 1`,
+      [this.personaId]
+    )
+    return rows.length > 0 ? this.rowToMemory(rows[0]) : null
+  }
+
+  // Nearest neighbours to a given embedding — used by the dream chain to find
+  // what naturally connects to the current node.
+  async retrieveNearestTo(embedding: number[], excludeIds: string[], limit = 4): Promise<ConsolidatedMemory[]> {
+    const vec = `[${embedding.join(',')}]`
+    const excludePlaceholders = excludeIds.length
+      ? `AND id NOT IN (${excludeIds.map((_, i) => `$${i + 3}`).join(',')})`
+      : ''
+    const { rows } = await this.pg.query(
+      `SELECT * FROM consolidated_memories
+       WHERE persona_id = $1 AND embedding IS NOT NULL
+       ${excludePlaceholders}
+       ORDER BY embedding <=> $2::vector
+       LIMIT ${limit}`,
+      [this.personaId, vec, ...excludeIds]
     )
     return rows.map((r: any) => this.rowToMemory(r))
   }

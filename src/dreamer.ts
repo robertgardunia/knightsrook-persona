@@ -12,6 +12,7 @@
 
 import { ulid } from 'ulid'
 import { cognize } from './cognition.js'
+import { embedText } from './embeddings.js'
 import { captureTurn } from './consolidator.js'
 import type { Substrate } from './substrate.js'
 import type { Storage } from './storage.js'
@@ -19,8 +20,7 @@ import type { Goblin } from './types.js'
 
 const DREAM_INTERVAL_MS   = Number(process.env.DREAM_INTERVAL_MS  ?? 45_000)
 const GOBLIN_MAX_ATTEMPTS = Number(process.env.GOBLIN_MAX_ATTEMPTS ?? 3)
-const DREAM_POOL_SIZE     = 20  // pull a wider pool, rotate through it
-const DREAM_SAMPLE_SIZE   = 6   // how many memories to show per cycle
+const CHAIN_MAX_STEPS     = 4   // max hops per dream chain
 
 // Gemma wraps JSON in ```json fences — strip them before parsing.
 function extractJson(raw: string): string {
@@ -29,6 +29,8 @@ function extractJson(raw: string): string {
   const braced = raw.match(/\{[\s\S]*\}/)
   return braced ? braced[0] : raw
 }
+
+type ChainStep = { node: string; why: string; cohesion: number }
 
 type DreamCycleResult = {
   type: 'dream' | 'goblin'
@@ -49,11 +51,6 @@ export class Dreamer {
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private goblinAttempts = new Map<string, number>()
-  private dreamCycleIndex = 0
-  // Clusters visited recently — skip them so the dreamer doesn't over-reinforce
-  // the same edges. Evicts oldest when it exceeds VISITED_CAP.
-  private visitedClusters: string[] = []
-  private static readonly VISITED_CAP = 12
 
   constructor(
     private substrate: Substrate,
@@ -74,10 +71,13 @@ export class Dreamer {
 
   private schedule(): void {
     if (!this.running) return
+    // No artificial delay between dreams — one chain ends, the next begins.
+    // The chain itself (LLM calls + embedding) provides natural pacing.
+    // A brief yield keeps the event loop from starving other work.
     this.timer = setTimeout(() => {
       this.cycle().catch(err => console.error('[dreamer] cycle error:', err))
         .finally(() => this.schedule())
-    }, DREAM_INTERVAL_MS)
+    }, 500)
   }
 
   private async cycle(): Promise<void> {
@@ -147,49 +147,76 @@ export class Dreamer {
   }
 
   private async dreamCycle(): Promise<DreamCycleResult | null> {
-    // Pull a wider pool and rotate the window each cycle so the dreamer doesn't
-    // fixate on the same top-cohesion memories every time.
-    const pool = await this.storage.retrieveDreamPool(DREAM_POOL_SIZE)
-    if (pool.length === 0) return null
+    // Random entry point — no pre-filtering, let the chain find its own path
+    const seed = await this.storage.retrieveDreamSeed()
+    if (!seed) return null
 
-    // Filter out recently visited clusters before sampling
-    const fresh = pool.filter(m => !this.visitedClusters.includes(m.cluster))
-    const source = fresh.length >= DREAM_SAMPLE_SIZE ? fresh : pool  // fall back to full pool if too few fresh
-    const offset = (this.dreamCycleIndex * DREAM_SAMPLE_SIZE) % Math.max(1, source.length)
-    const mems = source.slice(offset, offset + DREAM_SAMPLE_SIZE)
-    if (mems.length < DREAM_SAMPLE_SIZE) mems.push(...source.slice(0, DREAM_SAMPLE_SIZE - mems.length))
-    this.dreamCycleIndex++
+    const snap = this.substrate.mindSnapshot()
+    const equilibrium = snap.equilibrium
 
-    // Mark these clusters visited
-    for (const m of mems) {
-      if (!this.visitedClusters.includes(m.cluster)) this.visitedClusters.push(m.cluster)
+    const chain: ChainStep[] = []
+    const visitedIds: string[] = [seed.id]
+    let current = seed
+    let currentEmbedding = await embedText(current.summary)
+
+    for (let step = 0; step < CHAIN_MAX_STEPS; step++) {
+      // Find nearest neighbours to current node, excluding already visited
+      const neighbours = await this.storage.retrieveNearestTo(currentEmbedding, visitedIds, 4)
+      const neighbourText = neighbours.map((m, i) =>
+        `${i + 1}. [${m.cluster}] ${m.summary}`
+      ).join('\n')
+
+      const settledHint = equilibrium >= 7
+        ? 'Equilibrium is high — feel free to drift and explore freely.'
+        : equilibrium <= 4
+          ? 'Equilibrium is low — look for what feels broken or unresolved.'
+          : ''
+
+      const prompt =
+        `You are following an association chain. Current node:\n` +
+        `[${current.cluster}] ${current.summary}\n\n` +
+        `Nearby nodes:\n${neighbourText}\n\n` +
+        `${settledHint}\n\n` +
+        `Either:\n` +
+        `- Move to one of the nearby nodes if you see a genuine connection (name it specifically)\n` +
+        `- Stay here and articulate something about this node that wasn't captured yet\n` +
+        `- Let the chain end here if it feels complete\n\n` +
+        `Reply with JSON only:\n` +
+        `{"node":"<what you're focusing on now>","why":"<what connection or insight>","cohesion":<1-10>,"continue":<true|false>}`
+
+      const raw = await cognize(prompt, { temperature: 0.75, maxTokens: 250 })
+
+      try {
+        const parsed = JSON.parse(extractJson(raw)) as {
+          node: string; why: string; cohesion: number; continue: boolean
+        }
+        chain.push({ node: parsed.node, why: parsed.why, cohesion: Number(parsed.cohesion) || 5 })
+
+        if (!parsed.continue) break
+
+        // Move to the most relevant neighbour by re-embedding the current thought
+        if (neighbours.length > 0) {
+          currentEmbedding = await embedText(parsed.node + ' ' + parsed.why)
+          // Pick the neighbour closest to where Gemma said it was going
+          const closest = neighbours[0]
+          visitedIds.push(closest.id)
+          current = closest
+        } else {
+          break
+        }
+      } catch {
+        console.warn('[dreamer] chain step parse failure:', raw.slice(0, 80))
+        break
+      }
     }
-    if (this.visitedClusters.length > Dreamer.VISITED_CAP) {
-      this.visitedClusters.splice(0, this.visitedClusters.length - Dreamer.VISITED_CAP)
-    }
 
-    const memText = mems.map((m, i) => `${i + 1}. [${m.cluster}] ${m.summary}`).join('\n')
+    if (chain.length === 0) return null
 
-    const prompt =
-      `You are processing memory fragments during a quiet period. No one is waiting for a response.\n\n` +
-      `Memory fragments:\n${memText}\n\n` +
-      `Do any of the following — whatever feels natural given what's here:\n` +
-      `- Notice a shared structure between two or more fragments (a block that bridges unrelated edges, or an edge that connects otherwise separate blocks)\n` +
-      `- Find an unexpected link that wasn't obvious when these were first recorded\n` +
-      `- Follow a loose thread — something half-formed that wants more attention\n` +
-      `- Try something out — an association that might not hold, but is worth testing\n\n` +
-      `Be specific about what connects to what. Vague summaries are not useful here.\n\n` +
-      `Reply with JSON only, no other text:\n{"thought":"...","coherence":<integer 1-10>}`
+    // The full chain is the thought — traversal path preserved
+    const thought = chain.map((s, i) => `${i + 1}. ${s.node} — ${s.why}`).join('\n')
+    const coherence = Math.round(chain.reduce((s, c) => s + c.cohesion, 0) / chain.length)
 
-    const raw = await cognize(prompt, { temperature: 0.8, maxTokens: 200 })
-
-    try {
-      const parsed = JSON.parse(extractJson(raw)) as { thought: string; coherence: number }
-      return { type: 'dream', thought: parsed.thought, coherence: Number(parsed.coherence) || 5 }
-    } catch {
-      console.warn('[dreamer] dream parse failure:', raw.slice(0, 100))
-      return null
-    }
+    return { type: 'dream', thought, coherence }
   }
 
   private async goblinCycle(goblin: Goblin): Promise<DreamCycleResult | null> {
