@@ -142,8 +142,8 @@ export class Substrate {
       cycles: 0,
     })
 
-    // Stream LLM via MCP beta — events piped to caller in real time
-    const stream = await this.client.beta.messages.stream({
+    // Stream LLM via MCP beta — iterate raw chunks so we see mcp_tool_use/mcp_tool_result
+    const stream = this.client.messages.stream({
       model: this.model,
       max_tokens: 4096,
       system: systemPrompt,
@@ -155,28 +155,32 @@ export class Substrate {
       mcp_servers: [
         { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
       ],
-      betas: ['mcp-client-2025-11-20'],
-    } as any)
+    } as any, { headers: { 'anthropic-beta': 'mcp-client-2025-11-20' } })
 
-    // Pipe stream events to caller so the UI can show work in progress
-    stream.on('text', (text) => {
-      onEvent?.({ type: 'text_delta', text })
-    })
-    stream.on('event', (event: any) => {
-      if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-        onEvent?.({ type: 'tool_use', name: event.content_block.name, input: {} })
-      }
-      if (event.type === 'content_block_stop') {
-        // tool_result blocks arrive as content blocks in MCP beta
-        const block = event.content_block as any
-        if (block?.type === 'tool_result') {
+    // Iterate raw SSE chunks — mcp_tool_use/mcp_tool_result only surface here
+    const pendingToolNames = new Map<number, string>()
+    for await (const chunk of stream as any) {
+      if (chunk.type === 'content_block_start') {
+        const block = chunk.content_block as any
+        if (block?.type === 'mcp_tool_use') {
+          pendingToolNames.set(chunk.index, block.name)
+          onEvent?.({ type: 'tool_use', name: block.name, input: {} })
+        }
+        if (block?.type === 'mcp_tool_result') {
+          const name = pendingToolNames.get(chunk.index - 1) ?? ''
           const result = Array.isArray(block.content)
             ? block.content.map((c: any) => c.text ?? '').join('')
-            : block.content
-          onEvent?.({ type: 'tool_result', name: '', result })
+            : block.content ?? ''
+          onEvent?.({ type: 'tool_result', name, result })
+        }
+        if (block?.type === 'text') {
+          // text block starting — subsequent text_delta events will flow via stream.on('text')
         }
       }
-    })
+      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
+        onEvent?.({ type: 'text_delta', text: chunk.delta.text })
+      }
+    }
 
     const response = await stream.finalMessage()
 
