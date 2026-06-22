@@ -171,10 +171,14 @@ export class Dreamer {
     const memText = mems.map((m, i) => `${i + 1}. [${m.cluster}] ${m.summary}`).join('\n')
 
     const prompt =
-      `You are doing self-directed free association between memory fragments.\n\n` +
-      `Recent memories:\n${memText}\n\n` +
-      `Make one brief, genuine association — a connection you notice between any of these, ` +
-      `or a thread worth following. This is internal processing, not a response to anyone.\n\n` +
+      `You are processing memory fragments during a quiet period. No one is waiting for a response.\n\n` +
+      `Memory fragments:\n${memText}\n\n` +
+      `Do any of the following — whatever feels natural given what's here:\n` +
+      `- Notice a shared structure between two or more fragments (a block that bridges unrelated edges, or an edge that connects otherwise separate blocks)\n` +
+      `- Find an unexpected link that wasn't obvious when these were first recorded\n` +
+      `- Follow a loose thread — something half-formed that wants more attention\n` +
+      `- Try something out — an association that might not hold, but is worth testing\n\n` +
+      `Be specific about what connects to what. Vague summaries are not useful here.\n\n` +
       `Reply with JSON only, no other text:\n{"thought":"...","coherence":<integer 1-10>}`
 
     const raw = await cognize(prompt, { temperature: 0.8, maxTokens: 200 })
