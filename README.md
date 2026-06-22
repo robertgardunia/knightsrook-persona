@@ -143,7 +143,7 @@ All state is visible in real time in the **MIND STATE** right-sidebar panel and 
 
 A `Dreamer` instance starts alongside every `Substrate`. It runs on a background timer (default 45s, configurable via `DREAM_INTERVAL_MS`) and executes one cognitive cycle per tick:
 
-- **Dream state** — pulls a pool of 20 memories (blended 60% cohesion + 40% recency) and rotates a 6-memory window each cycle so the dreamer doesn't fixate on the same top-scoring memories every turn. Asks the local Gemma 3 12B model to free-associate across the window. Output saved as `source:'internal'` turn, consolidated into Postgres memory, idea budget ticked.
+- **Dream state** — pulls a pool of 20 memories ordered by *low* cohesion, low retrieval count, and age. High-cohesion memories are already strong; dream state works on weak edges and underconnected material where there's room to grow. Rotates a 6-memory window each cycle and skips recently visited clusters (cap: 12) to prevent over-reinforcement. Asks the local Gemma 3 12B model to free-associate across the window. Output saved as `source:'internal'` turn, consolidated into Postgres memory, idea budget ticked.
 - **Goblin state** — for each active goblin, asks Gemma to reason about the broken edge and attempt repair. If confidence ≥ 6 and resolved, goblin resolves. After `GOBLIN_MAX_ATTEMPTS` (default 3) failed attempts, the goblin fades.
 - **Conversation / refractory** — yields immediately, does nothing.
 

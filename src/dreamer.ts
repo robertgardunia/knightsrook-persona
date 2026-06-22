@@ -149,7 +149,7 @@ export class Dreamer {
   private async dreamCycle(): Promise<DreamCycleResult | null> {
     // Pull a wider pool and rotate the window each cycle so the dreamer doesn't
     // fixate on the same top-cohesion memories every time.
-    const pool = await this.storage.retrieveRecentHighCohesion(DREAM_POOL_SIZE)
+    const pool = await this.storage.retrieveDreamPool(DREAM_POOL_SIZE)
     if (pool.length === 0) return null
 
     // Filter out recently visited clusters before sampling
