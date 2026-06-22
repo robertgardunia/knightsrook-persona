@@ -219,7 +219,7 @@
 
 <div class="layout">
   <!-- Left sidebar toggle -->
-  <div class="sidebar-toggle left" id="left-toggle" title="Toggle notes">NOTES</div>
+  <div class="sidebar-toggle left" id="left-toggle" title="Toggle context panels">INFO</div>
 
   <!-- Left sidebar -->
   <div class="sidebar-left collapsed" id="sidebar-left">
@@ -235,6 +235,7 @@
         </div>
       </div>
     </div>
+    <div id="left-panels"></div>
   </div>
 
   <!-- Chat -->
@@ -338,7 +339,7 @@ rightToggle.addEventListener('click', () => {
 applyRightState(STORE.get('right') !== false) // default open
 
 // Per-panel collapse state
-const PANELS_COLLAPSED_DEFAULT = new Set(['STORAGE', 'NORMALIZATION', 'IMPORTANCE'])
+const PANELS_COLLAPSED_DEFAULT = new Set(['STORAGE', 'NORMALIZATION'])
 function isPanelOpen(name) {
   const stored = STORE.get('panel-' + name)
   if (stored !== null) return stored
@@ -643,13 +644,14 @@ function renderSidebar(t, importanceBanner) {
   const empty = document.getElementById('sidebar-empty')
   if (empty) empty.remove()
 
+  let left = ''
   let html = ''
 
-  // SESSION
-  html += panel('SESSION', `<span class="badge">turn ${t.turnNumber}</span>`,
+  // ── LEFT: SESSION
+  left += panel('SESSION', `<span class="badge">turn ${t.turnNumber}</span>`,
     kv('persona', t.personaId, 'blue'))
 
-  // COHESION
+  // ── RIGHT: COHESION
   const c = t.cohesion
   const cScore = c ? c.score : 0
   const cColor = cohesionColor(cScore)
@@ -724,7 +726,7 @@ function renderSidebar(t, importanceBanner) {
       `<div style="gap:0">${callRows}</div>`, 'style="color:var(--green)"')
   }
 
-  // NORMALIZATION (collapsed by default)
+  // ── LEFT: NORMALIZATION
   const normBody = `
     ${kv('contradictions', t.normalization.contradictions, t.normalization.contradictions > 0 ? 'red' : '')}
     ${kv('additions', t.normalization.additions, t.normalization.additions > 0 ? 'yellow' : '')}
@@ -732,19 +734,19 @@ function renderSidebar(t, importanceBanner) {
       ? kv('length delta', `${t.normalization.candidateLength} → ${t.normalization.normalizedLength} chars`)
       : ''}
   `
-  html += panel('NORMALIZATION', '', normBody)
+  left += panel('NORMALIZATION', '', normBody)
 
-  // STORAGE (collapsed by default)
+  // ── LEFT: STORAGE
   const storeBody = `
     ${kv('user turn', t.storage.userTurnId.slice(-8) + '…', 'muted')}
     ${kv('asst turn', t.storage.assistantTurnId.slice(-8) + '…', 'muted')}
     ${kv('archive', t.storage.archivePath)}
   `
-  html += panel('STORAGE', '', storeBody)
+  left += panel('STORAGE', '', storeBody)
 
-  // IMPORTANCE (collapsed by default)
+  // ── LEFT: IMPORTANCE
   if (importanceBanner) {
-    html += panel('IMPORTANCE', '',
+    left += panel('IMPORTANCE', '',
       `<div style="font-size:11px;color:var(--muted)">${escHtml(importanceBanner)}</div>`)
   }
 
@@ -765,6 +767,8 @@ function renderSidebar(t, importanceBanner) {
   }
 
   sidebarEl.innerHTML = html
+  const leftPanels = document.getElementById('left-panels')
+  if (leftPanels) leftPanels.innerHTML = left
 }
 </script>
 </body>
