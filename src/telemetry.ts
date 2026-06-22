@@ -42,7 +42,7 @@ export function renderTelemetry(t: TurnTelemetry): string {
   const ctxBar = bar(t.contextTokens, t.contextBudget)
   const ctxPct = pct(t.contextTokens, t.contextBudget)
   lines.push(` CONTEXT     ${ctxBar}  ${fmt(t.contextTokens)} / ${fmt(t.contextBudget)} (${ctxPct})`)
-  lines.push(`   consolidation triggers at 25% = ${fmt(Math.round(t.contextBudget * 0.25))} tokens`)
+  lines.push(`   eviction: FIFO once buffer exceeds budget ceiling`)
 
   lines.push('')
 

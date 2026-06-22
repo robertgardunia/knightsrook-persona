@@ -57,6 +57,7 @@ export class Storage {
         id VARCHAR(26) PRIMARY KEY,
         persona_id VARCHAR(64) NOT NULL DEFAULT 'default',
         role VARCHAR(10) NOT NULL,
+        source VARCHAR(16) NOT NULL DEFAULT 'human',
         content TEXT NOT NULL,
         raw_llm_content TEXT,
         cohesion_score TINYINT,
@@ -68,6 +69,9 @@ export class Storage {
         importance_decisions JSON,
         normalization_contradictions JSON,
         normalization_additions JSON,
+        retrieval_cohesion_count INT,
+        retrieval_cohesion_sims JSON,
+        retrieval_factual_count INT,
         tokens INT NOT NULL,
         timestamp BIGINT NOT NULL,
         INDEX idx_turns_persona (persona_id)
@@ -78,16 +82,16 @@ export class Storage {
   async saveTurn(turn: Turn): Promise<void> {
     await this.mysql.execute(
       `INSERT INTO turns (
-        id, persona_id, role, content, raw_llm_content,
+        id, persona_id, role, source, content, raw_llm_content,
         cohesion_score, cohesion_drivers, cohesion_shifts,
         importance_entities, importance_facts, importance_preferences, importance_decisions,
         normalization_contradictions, normalization_additions,
         retrieval_cohesion_count, retrieval_cohesion_sims, retrieval_factual_count,
         tokens, timestamp
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE content = VALUES(content)`,
       [
-        turn.id, this.personaId, turn.role, turn.content, turn.rawLLMContent ?? null,
+        turn.id, this.personaId, turn.role, turn.source, turn.content, turn.rawLLMContent ?? null,
         turn.cohesion?.score ?? null, turn.cohesion?.drivers ?? null, turn.cohesion?.shifts ?? null,
         JSON.stringify(turn.importance?.entities ?? []),
         JSON.stringify(turn.importance?.facts ?? []),
@@ -152,6 +156,7 @@ export class Storage {
   private rowToTurn = (row: any): Turn => ({
     id: row.id,
     role: row.role,
+    source: (row.source ?? (row.role === 'user' ? 'human' : 'self')) as Turn['source'],
     content: row.content,
     rawLLMContent: row.raw_llm_content ?? undefined,
     cohesion: row.cohesion_score == null ? undefined : {
@@ -246,14 +251,6 @@ export class Storage {
       .slice(0, limit)
 
     return scored.map(({ mem, hits }: any) => ({ ...mem, keywordHits: hits }))
-  }
-
-  async recentConsolidated(limit = 3): Promise<ConsolidatedMemory[]> {
-    const { rows } = await this.pg.query(
-      `SELECT * FROM consolidated_memories WHERE persona_id = $1 ORDER BY created_at DESC LIMIT $2`,
-      [this.personaId, limit]
-    )
-    return rows.map(this.rowToMemory)
   }
 
   private rowToMemory = (row: any): ConsolidatedMemory => ({

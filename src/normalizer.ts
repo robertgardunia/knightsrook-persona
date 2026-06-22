@@ -44,9 +44,3 @@ export function normalize(
   return { normalized: working, actions }
 }
 
-export function formatNormalizationBanner(actions: NormalizationActions): string | null {
-  const parts: string[] = []
-  if (actions.contradictionsFound.length) parts.push(`${actions.contradictionsFound.length} contradiction(s) flagged`)
-  if (actions.additionsIntegrated.length) parts.push(`${actions.additionsIntegrated.length} addition(s) integrated`)
-  return parts.length ? `[Normalizer: ${parts.join(', ')}]` : null
-}

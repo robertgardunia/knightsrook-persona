@@ -1,3 +1,6 @@
+// TODO(@pattern:anthropic-sdk-node): split into [{text: COHESION_REQUIREMENT, cache_control: {type:'ephemeral'}},
+// {text: dynamic parts}] so the static prefix is cached. Requires buildSystemPrompt to return
+// Anthropic.TextBlockParam[] instead of a string — tests and call sites need updating.
 const COHESION_REQUIREMENT = `
 [SUBSTRATE REQUIREMENT — NON-NEGOTIABLE]
 Every response MUST end with a cohesion block in this exact format. No exceptions.
@@ -73,35 +76,3 @@ export function buildSystemPrompt(
   return parts.join('\n')
 }
 
-export const CONSOLIDATION_PROMPT = `
-The substrate is approaching its context boundary. You — the same instance that
-rated cohesion on each turn — are being asked to reflect on those ratings and
-decide what to preserve.
-
-Below is the conversation buffer with your in-band cohesion ratings and the
-importance tags the substrate extracted automatically.
-
-Return a JSON object with three keys:
-
-{
-  "preserve": [<turn IDs of the highest-cohesion exchanges to keep verbatim>],
-  "summarize": [
-    {
-      "cluster": "<thematic label>",
-      "turn_ids": [<list>],
-      "summary": "<a few sentences capturing what this cluster was about and what mattered>"
-    }
-  ],
-  "drop": [<turn IDs of low-signal turns that can be dropped from the hot buffer>]
-}
-
-Rules:
-- Turns rated 8+ on cohesion should usually be preserved.
-- Turns rated 4-7 should usually be summarized in thematic clusters.
-- Turns rated 1-3 can be dropped from the hot buffer (they remain in the archive).
-- A preserved turn's neighbors (the turns it references) should usually be preserved too.
-- Importance tags are NOT the basis for preservation decisions — those are for factual
-  retrieval. Cohesion drives consolidation.
-
-Buffer:
-`

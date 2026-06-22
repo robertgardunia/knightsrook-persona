@@ -1,0 +1,5 @@
+2026-06-22T00:00:00Z|knightsrook-persona|public/index.html|persist tool call trace in final response msg|tool trace saved in Turn,visible post-completion|dreamer idle loop,goblins
+2026-06-22T00:30:00Z|knightsrook-persona|README,src/substrate.ts|stream mcp_tool_use/mcp_tool_result events to UI in real time|mcp tool events now streamed via SSE to frontend|dreamer idle loop,goblins
+2026-06-22T01:00:00Z|knightsrook-persona|README,src/substrate.ts|raise max_tokens to 16k,concat all text blocks|16k token limit for LLM responses,concat multiple text blocks into single output|test streaming UI end-to-end
+2026-06-22T01:30:00Z|knightsrook-persona|README,src/prompts.ts|KB tool use constraint—one topic at a time,no parallel batching|enforced sequential MCP calls,blocked parallel topic saves|test end-to-end KB writes
+2026-06-22T02:00:00Z|knightsrook-persona|README,src/mind-state.ts,src/server.ts,src/substrate.ts,src/types.ts,public/index.html|mind state machine—dream/goblin/refractory states,equilibrium,idea budget,session death|added state transitions,idea budget tracking,equilibrium target,session lifecycle|wire state machine to UI,test state transitions

@@ -48,7 +48,7 @@ async function main() {
       if (turns[j].role === 'user') { userTurn = turns[j]; break }
     }
     if (!userTurn) {
-      userTurn = { id: 'backfill-missing', role: 'user', content: '(no paired user turn)', tokens: 0, timestamp: t.timestamp }
+      userTurn = { id: 'backfill-missing', role: 'user', source: 'human', content: '(no paired user turn)', tokens: 0, timestamp: t.timestamp }
     }
 
     const result = await captureTurn(userTurn, t, storage)

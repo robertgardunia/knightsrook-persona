@@ -9,7 +9,7 @@ const adjectives = [
   'late', 'lean', 'liminal', 'lone', 'lost', 'low', 'lunar', 'mellow',
   'midnight', 'mild', 'misty', 'molten', 'muted', 'narrow', 'nested', 'noble',
   'northern', 'obsidian', 'ochre', 'odd', 'old', 'onyx', 'open', 'outer',
-  'pale', 'patient', 'patient', 'phantom', 'plain', 'quiet', 'raw', 'relic',
+  'pale', 'patient', 'phantom', 'plain', 'quiet', 'raw', 'relic',
   'remote', 'restless', 'rough', 'runic', 'sacred', 'scarlet', 'severe',
   'sharp', 'shifting', 'silent', 'silver', 'slow', 'small', 'smoky', 'soft',
   'solar', 'solemn', 'sparse', 'stark', 'steady', 'still', 'stone', 'strange',
