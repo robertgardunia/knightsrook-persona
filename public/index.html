@@ -811,7 +811,7 @@ function renderSidebar(t, importanceBanner) {
       </div>`
     }).join('')
     html += panel('INJECTED', `<span class="badge">${t.injectedMemories.length}</span>`,
-      `<div style="gap:0">${memRows}</div>`)
+      `<div style="gap:0;max-height:300px;overflow-y:auto">${memRows}</div>`)
   } else {
     html += panel('INJECTED', '', kv('memories', 'none — cold LLM', 'red'))
   }
@@ -830,7 +830,7 @@ function renderSidebar(t, importanceBanner) {
       </div>`
     }).join('')
     html += panel('MCP', `<span class="badge">${t.mcpToolCalls.length}</span>`,
-      `<div style="gap:0">${callRows}</div>`, 'style="color:var(--green)"')
+      `<div style="gap:0;max-height:300px;overflow-y:auto">${callRows}</div>`, 'style="color:var(--green)"')
   }
 
   // ── LEFT: NORMALIZATION

@@ -107,7 +107,7 @@ Every `Turn` carries a `source` field (`'human' | 'internal' | 'self'`) for attr
 1. User message arrives → importance extracted, user turn saved to MySQL + JSON archive
 2. Query embedded via Ollama (`nomic-embed-text`) — runs in parallel with factual retrieval
 3. Two-path retrieval:
-   - **Cohesion path** — vector cosine similarity in Postgres (after embedding completes)
+   - **Cohesion path** — blended score (70% cosine similarity + 30% recency decay over 7 days) in Postgres, top 10 returned. Recency prevents recent high-cohesion memories from being buried when re-entering after a break on a different topic.
    - **Factual path** — keyword overlap against importance fields in Postgres (runs in parallel with embedding)
 4. LLM called with substrate-curated system prompt (KB tool use: one topic at a time, synthesize before fetching next) — streamed via raw SSE chunk iteration; `mcp_tool_use` and `mcp_tool_result` blocks surface as they arrive and are piped to the chat window in real time
 5. Response parsed for hidden `<cohesion>` block

@@ -216,16 +216,24 @@ export class Storage {
     )
   }
 
-  // Cohesion retrieval — cosine similarity, persona-scoped
-  async retrieveCohesionWeighted(queryEmbedding: number[], limit = 5): Promise<RetrievedMemory[]> {
+  // Cohesion retrieval — blended score: 70% cosine similarity + 30% recency.
+  // Pure cosine retrieval buries recent high-cohesion memories when the current
+  // topic diverges from them — a re-entry after days away gets no context.
+  // Recency decays linearly over 7 days: 1.0 now → 0.0 at 7d+.
+  async retrieveCohesionWeighted(queryEmbedding: number[], limit = 10): Promise<RetrievedMemory[]> {
     const vec = `[${queryEmbedding.join(',')}]`
+    const now = Date.now()
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
     const { rows } = await this.pg.query(
-      `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
+      `SELECT *,
+              1 - (embedding <=> $1::vector) AS similarity,
+              GREATEST(0.0, 1.0 - ($3::float - created_at) / $4::float) AS recency_score
        FROM consolidated_memories
        WHERE persona_id = $2 AND embedding IS NOT NULL
-       ORDER BY embedding <=> $1::vector
-       LIMIT $3`,
-      [vec, this.personaId, limit]
+       ORDER BY 0.7 * (1 - (embedding <=> $1::vector))
+              + 0.3 * GREATEST(0.0, 1.0 - ($3::float - created_at) / $4::float) DESC
+       LIMIT $5`,
+      [vec, this.personaId, now, sevenDaysMs, limit]
     )
 
     if (rows.length > 0) {
