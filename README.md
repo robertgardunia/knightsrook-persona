@@ -193,7 +193,7 @@ npm test          # run once
 npm run test:watch  # watch mode
 ```
 
-46 unit tests across 7 files covering `cohesion`, `importance`, `normalizer`, `embeddings`, `prompts`, `names`, and `consolidator`. Storage and substrate are integration-layer (require live DB + Anthropic) — covered by the validation checklist below instead.
+84 unit tests across 8 files covering `cohesion`, `importance`, `normalizer`, `embeddings`, `prompts`, `names`, `consolidator`, and `mind-state`. Storage and substrate are integration-layer (require live DB + Anthropic) — covered by the validation checklist below instead. Vitest is configured via `vitest.config.ts` to run only `src/__tests__/**` (excludes stale `dist/` copies).
 
 Tests run automatically on every commit via `.git/hooks/pre-commit`.
 
