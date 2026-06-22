@@ -147,7 +147,7 @@ A `Dreamer` instance starts alongside every `Substrate`. It runs on a background
 - **Goblin state** — for each active goblin, asks Gemma to reason about the broken edge and attempt repair. If confidence ≥ 6 and resolved, goblin resolves. After `GOBLIN_MAX_ATTEMPTS` (default 3) failed attempts, the goblin fades.
 - **Conversation / refractory** — yields immediately, does nothing.
 
-Dream cycles produce memories retrievable in future conversations. Goblin pokes appear in the MIND STATE panel under "goblin poke" and the last dream thought appears under "dream thought". State updates broadcast live to all connected clients via `dream_event` WebSocket messages.
+The default persona's substrate and dream loop start eagerly on boot — no user message required. Dream cycles produce memories retrievable in future conversations. Goblin pokes appear in the MIND STATE panel under "goblin poke" and the last dream thought appears under "dream thought". State updates broadcast live to all connected clients via `dream_event` WebSocket messages.
 
 ### Backfill
 

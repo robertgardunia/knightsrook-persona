@@ -150,4 +150,7 @@ wss.on('connection', (ws: WebSocket) => {
 server.listen(PORT, () => {
   console.log(`PERSONA running at http://localhost:${PORT}`)
   console.log(`Model: ${model}  |  FIFO eviction at ${(budgetPct * 100).toFixed(0)}% of context`)
+  // Eagerly start the default persona's substrate and dream loop on boot —
+  // don't wait for the first WebSocket message.
+  getSubstrate(defaultPersonaId).catch(err => console.error('[boot] substrate init failed:', err))
 })
