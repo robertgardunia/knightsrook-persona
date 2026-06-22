@@ -190,7 +190,7 @@ npm test          # run once
 npm run test:watch  # watch mode
 ```
 
-26 unit tests covering `cohesion`, `importance`, `normalizer`, and `embeddings`. Storage, consolidator, and substrate are integration-layer and require live DB + Anthropic — covered by the validation checklist below instead.
+46 unit tests across 7 files covering `cohesion`, `importance`, `normalizer`, `embeddings`, `prompts`, `names`, and `consolidator`. Storage and substrate are integration-layer (require live DB + Anthropic) — covered by the validation checklist below instead.
 
 Tests run automatically on every commit via `.git/hooks/pre-commit`.
 
