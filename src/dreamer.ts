@@ -49,7 +49,11 @@ export class Dreamer {
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private goblinAttempts = new Map<string, number>()
-  private dreamCycleIndex = 0  // rotates the memory window each cycle
+  private dreamCycleIndex = 0
+  // Clusters visited recently — skip them so the dreamer doesn't over-reinforce
+  // the same edges. Evicts oldest when it exceeds VISITED_CAP.
+  private visitedClusters: string[] = []
+  private static readonly VISITED_CAP = 12
 
   constructor(
     private substrate: Substrate,
@@ -148,11 +152,21 @@ export class Dreamer {
     const pool = await this.storage.retrieveRecentHighCohesion(DREAM_POOL_SIZE)
     if (pool.length === 0) return null
 
-    const offset = (this.dreamCycleIndex * DREAM_SAMPLE_SIZE) % Math.max(1, pool.length)
-    const mems = pool.slice(offset, offset + DREAM_SAMPLE_SIZE)
-    // Wrap around if we sliced past the end
-    if (mems.length < DREAM_SAMPLE_SIZE) mems.push(...pool.slice(0, DREAM_SAMPLE_SIZE - mems.length))
+    // Filter out recently visited clusters before sampling
+    const fresh = pool.filter(m => !this.visitedClusters.includes(m.cluster))
+    const source = fresh.length >= DREAM_SAMPLE_SIZE ? fresh : pool  // fall back to full pool if too few fresh
+    const offset = (this.dreamCycleIndex * DREAM_SAMPLE_SIZE) % Math.max(1, source.length)
+    const mems = source.slice(offset, offset + DREAM_SAMPLE_SIZE)
+    if (mems.length < DREAM_SAMPLE_SIZE) mems.push(...source.slice(0, DREAM_SAMPLE_SIZE - mems.length))
     this.dreamCycleIndex++
+
+    // Mark these clusters visited
+    for (const m of mems) {
+      if (!this.visitedClusters.includes(m.cluster)) this.visitedClusters.push(m.cluster)
+    }
+    if (this.visitedClusters.length > Dreamer.VISITED_CAP) {
+      this.visitedClusters.splice(0, this.visitedClusters.length - Dreamer.VISITED_CAP)
+    }
 
     const memText = mems.map((m, i) => `${i + 1}. [${m.cluster}] ${m.summary}`).join('\n')
 
