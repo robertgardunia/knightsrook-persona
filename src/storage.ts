@@ -216,14 +216,22 @@ export class Storage {
     )
   }
 
-  // Cohesion retrieval — blended score: 70% cosine similarity + 30% recency.
-  // Pure cosine retrieval buries recent high-cohesion memories when the current
-  // topic diverges from them — a re-entry after days away gets no context.
-  // Recency decays linearly over 7 days: 1.0 now → 0.0 at 7d+.
+  // Cohesion retrieval — two-pass with wide-net fallback.
+  //
+  // Pass 1: blended score (70% cosine + 30% recency over 7 days), top `limit`.
+  // Pass 2: if the best result is weak (similarity < 0.45 — topic divergence,
+  //   pivot, non-sequitur), fall back to recency-only: pull the 5 most recent
+  //   high-cohesion memories regardless of topic distance. Merged with pass 1,
+  //   deduped by id, capped at limit.
+  //
+  // This handles unexpected correlations and cold re-entry on a changed topic
+  // without requiring a graph of cross-domain edges (which the dream state will
+  // eventually build organically).
   async retrieveCohesionWeighted(queryEmbedding: number[], limit = 10): Promise<RetrievedMemory[]> {
     const vec = `[${queryEmbedding.join(',')}]`
     const now = Date.now()
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+
     const { rows } = await this.pg.query(
       `SELECT *,
               1 - (embedding <=> $1::vector) AS similarity,
@@ -236,8 +244,29 @@ export class Storage {
       [vec, this.personaId, now, sevenDaysMs, limit]
     )
 
-    if (rows.length > 0) {
-      const ids = rows.map((r: any) => r.id)
+    let allRows = [...rows]
+
+    // Wide-net fallback: if top result is below similarity threshold, no
+    // topical match — cast wider by pulling recent high-cohesion memories.
+    const bestSimilarity = rows.length > 0 ? Number(rows[0].similarity) : 0
+    if (bestSimilarity < 0.45) {
+      const { rows: recentRows } = await this.pg.query(
+        `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
+         FROM consolidated_memories
+         WHERE persona_id = $2 AND embedding IS NOT NULL
+         ORDER BY cohesion_peak DESC, created_at DESC
+         LIMIT 5`,
+        [vec, this.personaId]
+      )
+      const seen = new Set(allRows.map((r: any) => r.id))
+      for (const r of recentRows) {
+        if (!seen.has(r.id)) { allRows.push(r); seen.add(r.id) }
+      }
+      allRows = allRows.slice(0, limit)
+    }
+
+    if (allRows.length > 0) {
+      const ids = allRows.map((r: any) => r.id)
       const placeholders = ids.map((_: any, i: number) => `$${i + 2}`).join(',')
       await this.pg.query(
         `UPDATE consolidated_memories
@@ -247,7 +276,7 @@ export class Storage {
       )
     }
 
-    return rows.map((r: any) => ({ ...this.rowToMemory(r), similarity: Number(r.similarity) }))
+    return allRows.map((r: any) => ({ ...this.rowToMemory(r), similarity: Number(r.similarity) }))
   }
 
   // Factual retrieval — keyword overlap, persona-scoped
