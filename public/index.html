@@ -632,6 +632,86 @@ function drawChart() {
 window.addEventListener('resize', resizeChart)
 requestAnimationFrame(resizeChart)
 
+// ── Mind state panel ─────────────────────────────────────────────────────────
+const STATE_COLORS = {
+  dream:        'var(--accent)',
+  conversation: 'var(--blue)',
+  goblin:       'var(--yellow)',
+  refractory:   'var(--red)',
+}
+
+function renderMindState(ms) {
+  if (!ms) return ''
+  const stateColor = STATE_COLORS[ms.state] || 'var(--muted)'
+
+  const traj = ms.cohesionTrajectory || []
+  const trajHtml = traj.length
+    ? traj.map((s, i) => {
+        const col = s >= 8 ? '#4ade80' : s >= 5 ? '#7c6af7' : '#f87171'
+        const bold = i === traj.length - 1 ? 'font-weight:bold' : ''
+        return `<span style="color:${col};${bold}">${s}</span>`
+      }).join('<span style="color:var(--border)"> › </span>')
+    : '<span style="color:var(--muted)">—</span>'
+
+  const goblinsHtml = ms.activeGoblins && ms.activeGoblins.length
+    ? ms.activeGoblins.map(g =>
+        `<div style="font-size:10px;padding:3px 0;border-top:1px solid var(--border);color:var(--yellow)">
+           &#x1F47A; ${escHtml(g.trigger.slice(0, 100))}${g.trigger.length > 100 ? '…' : ''}
+         </div>`
+      ).join('')
+    : '<div style="font-size:10px;color:var(--muted)">none</div>'
+
+  const budgetUsed = ms.ideaBudget?.used || 0
+  const budgetLimit = ms.ideaBudget?.limit || 100000
+  const budgetPct = (budgetUsed / budgetLimit * 100)
+  const budgetColor = budgetPct > 80 ? '#f87171' : budgetPct > 50 ? '#facc15' : '#7c6af7'
+
+  const events = (ms.recentEvents || []).slice(-10).reverse()
+  const eventsHtml = events.length
+    ? events.map(ev => {
+        const t = new Date(ev.timestamp)
+        const ts = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}`
+        let label = ev.type
+        let color = 'var(--muted)'
+        if (ev.type === 'state_transition')  { label = `${ev.from} → ${ev.to}`; color = STATE_COLORS[ev.to] || 'var(--muted)' }
+        if (ev.type === 'goblin_fired')      { label = `goblin: ${ev.trigger.slice(0, 60)}`; color = 'var(--yellow)' }
+        if (ev.type === 'goblin_resolved')   { label = 'goblin resolved'; color = 'var(--green)' }
+        if (ev.type === 'goblin_faded')      { label = 'goblin faded'; color = 'var(--muted)' }
+        if (ev.type === 'cohesion_drop')     { label = `drop ${ev.previous?.toFixed(1)} → ${ev.current} (Δ${ev.delta?.toFixed(1)})`; color = 'var(--red)' }
+        if (ev.type === 'budget_tick')       { label = `budget ${ev.used}/${budgetLimit}`; color = 'var(--muted)' }
+        if (ev.type === 'budget_exhausted')  { label = 'budget exhausted'; color = 'var(--red)' }
+        if (ev.type === 'budget_reset')      { label = 'budget reset'; color = 'var(--green)' }
+        if (ev.type === 'session_interrupted') { label = 'session interrupted'; color = 'var(--red)' }
+        return `<div style="font-size:10px;display:flex;gap:6px;padding:2px 0;border-top:1px solid var(--border)">
+          <span style="color:var(--muted);flex-shrink:0">${ts}</span>
+          <span style="color:${color}">${escHtml(label)}</span>
+        </div>`
+      }).join('')
+    : '<div style="font-size:10px;color:var(--muted)">no events yet</div>'
+
+  const body = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="color:${stateColor};font-size:13px;font-weight:600;letter-spacing:0.12em">${ms.state.toUpperCase()}</span>
+      <span style="color:var(--muted);font-size:10px">eq ${ms.equilibrium?.toFixed(1) ?? '—'}/10</span>
+    </div>
+    <div class="bar-row" style="margin-bottom:8px">
+      <div class="bar-label"><span>equilibrium</span><span style="color:${stateColor}">${ms.equilibrium?.toFixed(1) ?? '—'}</span></div>
+      ${bar(ms.equilibrium || 0, 10, stateColor)}
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:3px">trajectory</div>
+    <div style="margin-bottom:8px;font-size:11px;line-height:1.8">${trajHtml}</div>
+    <div class="bar-row" style="margin-bottom:8px">
+      <div class="bar-label"><span>idea budget</span><span>${budgetUsed.toLocaleString()} / ${budgetLimit.toLocaleString()}</span></div>
+      ${bar(budgetUsed, budgetLimit, budgetColor)}
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:3px">active goblins</div>
+    <div style="margin-bottom:8px">${goblinsHtml}</div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:3px">events</div>
+    ${eventsHtml}
+  `
+  return panel('MIND STATE', `<span class="badge" style="background:transparent;color:${stateColor}">${ms.state}</span>`, body)
+}
+
 // ── Sidebar renderer ──────────────────────────────────────────────────────────
 function bar(value, max, color = '#7c6af7') {
   const pct = Math.min(100, (value / max) * 100).toFixed(1)
@@ -690,6 +770,9 @@ function renderSidebar(t, importanceBanner) {
     ${(() => { const h = t.cohesionHealth; const pct = (h.coveragePct * 100).toFixed(0); const col = h.coveragePct >= 0.95 ? 'green' : h.coveragePct >= 0.8 ? 'yellow' : 'red'; return kv('coverage', `${pct}% · ${h.ratedTurns} rated / ${h.unratedTurns} unrated`, col) })()}
   ` : kv('status', '⚠ no rating — plain LLM this turn', 'red')
   html += panel('COHESION', `<span class="badge">${c ? cScore + '/10' : 'n/a'}</span>`, cohesionBody)
+
+  // MIND STATE
+  html += renderMindState(t.mindState)
 
   // CONTEXT
   const ctxPct = (t.contextPct * 100).toFixed(1)

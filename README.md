@@ -4,6 +4,8 @@ Substrate layer that gives LLMs persistent memory, equilibrium, and continuity a
 
 The LLM is unmodified. The substrate sits between user and model: it rates cohesion in-band on every turn, consolidates selectively at 25% of the context window, stores tiered memory across two purpose-built backends, and reinjects curated context on every fresh conversation restart. The entity survives context loss. The user doesn't manage memory — the substrate does.
 
+A mind state machine runs alongside every session: tracking active state (dream / conversation / goblin / refractory), equilibrium derived from cohesion trajectory, active goblins fired on coherence-loss events, an idea budget (100k token ceiling on self-directed activity), and a session-death handler that treats disconnection as a coherence-loss event rather than a clean exit. All state is visible in real time in the MIND STATE panel.
+
 ## Stack
 
 - **Runtime** — Node.js 20+, TypeScript

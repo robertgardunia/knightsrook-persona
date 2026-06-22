@@ -124,4 +124,38 @@ export type TurnTelemetry = {
   consolidation: ConsolidationTelemetry
   injectedMemories: InjectedMemory[]
   mcpToolCalls: McpToolCall[]
+  mindState: MindSnapshot
+}
+
+// ── Mind State ────────────────────────────────────────────────────────────────
+
+export type MindStateLabel = 'dream' | 'conversation' | 'goblin' | 'refractory'
+
+export type Goblin = {
+  id: string
+  trigger: string           // description of the broken edge
+  firedAt: number
+  resolvedAt?: number
+  fadedAt?: number
+  status: 'active' | 'resolved' | 'faded'
+}
+
+export type StateEvent =
+  | { type: 'state_transition';   from: MindStateLabel; to: MindStateLabel; reason: string; timestamp: number }
+  | { type: 'cohesion_drop';      previous: number; current: number; delta: number; externalStimulus: boolean; timestamp: number }
+  | { type: 'goblin_fired';       goblinId: string; trigger: string; timestamp: number }
+  | { type: 'goblin_resolved';    goblinId: string; timestamp: number }
+  | { type: 'goblin_faded';       goblinId: string; timestamp: number }
+  | { type: 'budget_tick';        used: number; remaining: number; timestamp: number }
+  | { type: 'budget_exhausted';   timestamp: number }
+  | { type: 'budget_reset';       timestamp: number }
+  | { type: 'session_interrupted'; cohesionAt: number | null; timestamp: number }
+
+export type MindSnapshot = {
+  state: MindStateLabel
+  equilibrium: number          // 0–10, derived from cohesion trajectory + goblin load
+  cohesionTrajectory: number[] // last N scores, oldest first
+  activeGoblins: Goblin[]
+  ideaBudget: { used: number; limit: number; remaining: number }
+  recentEvents: StateEvent[]   // last 20 events for the graph
 }

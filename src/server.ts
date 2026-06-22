@@ -104,14 +104,16 @@ wss.on('connection', (ws: WebSocket) => {
   // Send the resolved persona name so the UI can pre-fill it
   ws.send(JSON.stringify({ type: 'init', personaId: defaultPersonaId }))
 
+  let activePersonaId = defaultPersonaId
+
   ws.on('message', async (raw) => {
     let msg: { type: string; text?: string; personaId?: string }
     try { msg = JSON.parse(raw.toString()) } catch { return }
 
     if (msg.type === 'chat' && msg.text) {
-      const personaId = msg.personaId || defaultPersonaId
+      activePersonaId = msg.personaId || defaultPersonaId
       try {
-        const substrate = await getSubstrate(personaId)
+        const substrate = await getSubstrate(activePersonaId)
         const result = await substrate.respond(msg.text, (event: SubstrateEvent) => {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stream', event }))
         })
@@ -120,6 +122,12 @@ wss.on('connection', (ws: WebSocket) => {
         ws.send(JSON.stringify({ type: 'error', text: err.message }))
       }
     }
+  })
+
+  ws.on('close', () => {
+    // Session death — treat as coherence loss event, fire goblins via substrate
+    const substrate = substrates.get(activePersonaId)
+    if (substrate) substrate.sessionInterrupted()
   })
 })
 

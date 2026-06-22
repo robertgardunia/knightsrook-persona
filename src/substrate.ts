@@ -8,6 +8,7 @@ import { normalize } from './normalizer.js'
 import { captureTurn } from './consolidator.js'
 import { buildSystemPrompt } from './prompts.js'
 import { embedText } from './embeddings.js'
+import { MindState } from './mind-state.js'
 
 const MODEL_CONTEXT_TOKENS: Record<string, number> = {
   'claude-opus-4-8':             200_000,
@@ -50,6 +51,7 @@ export class Substrate {
   // only be dropped from the hot buffer once it is in this set — so the cliff's
   // edge is lossless, everything is already weighted and retrievable.
   private captured = new Set<string>()
+  private mind = new MindState()
 
   constructor(apiKey: string, model: string, budgetPct: number, personaId: string) {
     this.client = new Anthropic({ apiKey })
@@ -89,9 +91,20 @@ export class Substrate {
     return dropped
   }
 
+  sessionInterrupted(): void {
+    const lastScore = this.mind.snapshot().cohesionTrajectory.at(-1) ?? null
+    this.mind.sessionInterrupted(lastScore)
+  }
+
+  mindSnapshot() {
+    return this.mind.snapshot()
+  }
+
   async respond(userMessage: string, onEvent?: (e: SubstrateEvent) => void): Promise<SubstrateResponse> {
     this.turnNumber++
     const contextBudget = getContextLimit(this.model)
+
+    this.mind.onConversationStart()
 
     // User turn
     const userTurn: Turn = {
@@ -265,7 +278,10 @@ export class Substrate {
     // Track coverage of the differentiator. An unrated turn contributed no
     // weighted edge — the system ran as a plain LLM for that exchange.
     if (cohesion === null) this.unratedTurns++
-    else this.ratedTurns++
+    else {
+      this.ratedTurns++
+      this.mind.recordCohesion(cohesion.score, true) // true = user-driven turn
+    }
     const totalRated = this.ratedTurns + this.unratedTurns
     const cohesionHealth = {
       rated: cohesion !== null,
@@ -360,12 +376,11 @@ export class Substrate {
       consolidation: consolidationTelemetry,
       injectedMemories,
       mcpToolCalls,
+      mindState: this.mind.snapshot(),
     }
 
-    return {
-      visible: normalized,
-      importanceBanner: formatImportanceBanner(importanceTags),
-      telemetry,
-    }
+    this.mind.onConversationEnd()
+
+    return { visible: normalized, importanceBanner: formatImportanceBanner(importanceTags), telemetry }
   }
 }
