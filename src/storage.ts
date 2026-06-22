@@ -77,6 +77,23 @@ export class Storage {
         INDEX idx_turns_persona (persona_id)
       )
     `)
+
+    // Additive column migrations — safe to run repeatedly on existing tables
+    await this.addColumnIfMissing('source', `VARCHAR(16) NOT NULL DEFAULT 'human'`, 'AFTER role')
+    await this.addColumnIfMissing('retrieval_cohesion_count', 'INT', 'AFTER normalization_additions')
+    await this.addColumnIfMissing('retrieval_cohesion_sims', 'JSON', 'AFTER retrieval_cohesion_count')
+    await this.addColumnIfMissing('retrieval_factual_count', 'INT', 'AFTER retrieval_cohesion_sims')
+  }
+
+  private async addColumnIfMissing(column: string, definition: string, position: string): Promise<void> {
+    const [rows] = await this.mysql.query<any[]>(
+      `SELECT 1 FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'turns' AND COLUMN_NAME = ?`,
+      [column]
+    )
+    if (rows.length === 0) {
+      await this.mysql.execute(`ALTER TABLE turns ADD COLUMN ${column} ${definition} ${position}`)
+    }
   }
 
   async saveTurn(turn: Turn): Promise<void> {

@@ -55,7 +55,7 @@ npm run dev
 # → http://localhost:5030
 ```
 
-Requires: Docker, Ollama running locally, MySQL running locally.
+Requires: Docker, Ollama running locally, MySQL running locally. Schema migrations run automatically on every boot via `addColumnIfMissing()` — safe to run against existing databases.
 
 ## Interface
 
