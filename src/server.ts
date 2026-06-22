@@ -123,5 +123,5 @@ wss.on('connection', (ws: WebSocket) => {
 
 server.listen(PORT, () => {
   console.log(`PERSONA running at http://localhost:${PORT}`)
-  console.log(`Model: ${model}  |  Consolidation at ${(budgetPct * 100).toFixed(0)}% of context`)
+  console.log(`Model: ${model}  |  FIFO eviction at ${(budgetPct * 100).toFixed(0)}% of context`)
 })
