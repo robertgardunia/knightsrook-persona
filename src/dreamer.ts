@@ -17,8 +17,18 @@ import type { Substrate } from './substrate.js'
 import type { Storage } from './storage.js'
 import type { Goblin } from './types.js'
 
-const DREAM_INTERVAL_MS  = Number(process.env.DREAM_INTERVAL_MS  ?? 45_000)  // 45s between cycles
-const GOBLIN_MAX_ATTEMPTS = Number(process.env.GOBLIN_MAX_ATTEMPTS ?? 3)      // fade after this many failures
+const DREAM_INTERVAL_MS   = Number(process.env.DREAM_INTERVAL_MS  ?? 45_000)
+const GOBLIN_MAX_ATTEMPTS = Number(process.env.GOBLIN_MAX_ATTEMPTS ?? 3)
+const DREAM_POOL_SIZE     = 20  // pull a wider pool, rotate through it
+const DREAM_SAMPLE_SIZE   = 6   // how many memories to show per cycle
+
+// Gemma wraps JSON in ```json fences — strip them before parsing.
+function extractJson(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenced) return fenced[1].trim()
+  const braced = raw.match(/\{[\s\S]*\}/)
+  return braced ? braced[0] : raw
+}
 
 type DreamCycleResult = {
   type: 'dream' | 'goblin'
@@ -39,6 +49,7 @@ export class Dreamer {
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private goblinAttempts = new Map<string, number>()
+  private dreamCycleIndex = 0  // rotates the memory window each cycle
 
   constructor(
     private substrate: Substrate,
@@ -132,9 +143,16 @@ export class Dreamer {
   }
 
   private async dreamCycle(): Promise<DreamCycleResult | null> {
-    // Pull recent warm memories for free association
-    const mems = await this.storage.retrieveRecentHighCohesion(6)
-    if (mems.length === 0) return null
+    // Pull a wider pool and rotate the window each cycle so the dreamer doesn't
+    // fixate on the same top-cohesion memories every time.
+    const pool = await this.storage.retrieveRecentHighCohesion(DREAM_POOL_SIZE)
+    if (pool.length === 0) return null
+
+    const offset = (this.dreamCycleIndex * DREAM_SAMPLE_SIZE) % Math.max(1, pool.length)
+    const mems = pool.slice(offset, offset + DREAM_SAMPLE_SIZE)
+    // Wrap around if we sliced past the end
+    if (mems.length < DREAM_SAMPLE_SIZE) mems.push(...pool.slice(0, DREAM_SAMPLE_SIZE - mems.length))
+    this.dreamCycleIndex++
 
     const memText = mems.map((m, i) => `${i + 1}. [${m.cluster}] ${m.summary}`).join('\n')
 
@@ -148,7 +166,7 @@ export class Dreamer {
     const raw = await cognize(prompt, { temperature: 0.8, maxTokens: 200 })
 
     try {
-      const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? raw) as { thought: string; coherence: number }
+      const parsed = JSON.parse(extractJson(raw)) as { thought: string; coherence: number }
       return { type: 'dream', thought: parsed.thought, coherence: Number(parsed.coherence) || 5 }
     } catch {
       console.warn('[dreamer] dream parse failure:', raw.slice(0, 100))
@@ -178,7 +196,7 @@ export class Dreamer {
     const raw = await cognize(prompt, { temperature: 0.5, maxTokens: 200 })
 
     try {
-      const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? raw) as {
+      const parsed = JSON.parse(extractJson(raw)) as {
         attempt: string; confidence: number; resolved: boolean
       }
 

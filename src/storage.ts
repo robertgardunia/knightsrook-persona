@@ -310,13 +310,19 @@ export class Storage {
   // Recent high-cohesion memories — used by the dream loop for free association.
   // No embedding needed; ordered by cohesion_peak DESC then recency so the
   // dreamer starts with the most meaningful material.
-  async retrieveRecentHighCohesion(limit = 6): Promise<ConsolidatedMemory[]> {
+  async retrieveRecentHighCohesion(limit = 20): Promise<ConsolidatedMemory[]> {
+    // Blend cohesion_peak and recency so the dream pool isn't always the same
+    // top-N memories. 60% cohesion weight, 40% recency — gives variety while
+    // still preferring meaningful material.
+    const now = Date.now()
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
     const { rows } = await this.pg.query(
       `SELECT * FROM consolidated_memories
        WHERE persona_id = $1 AND embedding IS NOT NULL
-       ORDER BY cohesion_peak DESC, created_at DESC
-       LIMIT $2`,
-      [this.personaId, limit]
+       ORDER BY 0.6 * (cohesion_peak / 10.0)
+              + 0.4 * GREATEST(0.0, 1.0 - ($2::float - created_at) / $3::float) DESC
+       LIMIT $4`,
+      [this.personaId, now, sevenDaysMs, limit]
     )
     return rows.map((r: any) => this.rowToMemory(r))
   }
