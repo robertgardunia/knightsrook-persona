@@ -729,19 +729,29 @@ let lastDreamThought = null
 function updateMindStatePanel(ms, cycleResult) {
   if (!ms) return
   lastDreamThought = cycleResult
-  const rightSidebar = document.getElementById('right-sidebar')
-  if (!rightSidebar) return
-  // Replace the MIND STATE panel HTML inside the sidebar
+  const sidebar = document.getElementById('sidebar')
+  if (!sidebar) return
   const newPanelHtml = renderMindState(ms, cycleResult)
   const tmp = document.createElement('div')
   tmp.innerHTML = newPanelHtml
   const newPanel = tmp.firstElementChild
-  // Find existing MIND STATE panel by data attribute or header text
-  const existing = [...rightSidebar.querySelectorAll('.panel')].find(p => {
+  if (!newPanel) return
+  // Find existing MIND STATE panel
+  const existing = [...sidebar.querySelectorAll('.panel')].find(p => {
     const head = p.querySelector('.panel-head')
     return head && head.textContent.trim().startsWith('MIND STATE')
   })
-  if (existing && newPanel) existing.replaceWith(newPanel)
+  if (existing) {
+    existing.replaceWith(newPanel)
+  } else {
+    // Panel doesn't exist yet — insert after COHESION placeholder or at top
+    const cohesion = [...sidebar.querySelectorAll('.panel')].find(p => {
+      const head = p.querySelector('.panel-head')
+      return head && head.textContent.trim().startsWith('COHESION')
+    })
+    if (cohesion) cohesion.after(newPanel)
+    else sidebar.prepend(newPanel)
+  }
 }
 
 // ── Sidebar renderer ──────────────────────────────────────────────────────────
