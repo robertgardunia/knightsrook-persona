@@ -63,21 +63,23 @@ Web-based chat UI at `http://localhost:5030`. Chat on the left, live telemetry s
 
 **Influence chart** — full-width stacked area strip below the header. Green = semantic influence (avg cosine sim of memories above the 0.80 threshold), blue = factual keyword bump. Grey background = cold LLM. Time labels along the bottom. Seeds from history on page load so the full session arc is visible immediately.
 
-**Sidebar panels:**
-- **Session** — turn number, active persona
-- **Cohesion** — score (1-10), bar, drivers, shifts
-- **Context** — token usage vs budget, consolidation threshold marker
+**Right sidebar panels** (telemetry, default open):
+- **Cohesion** — score (1-10), bar, drivers, shifts, coverage %
+- **Mind State** — active state label (dream/conversation/goblin/refractory), equilibrium bar, cohesion trajectory, idea budget bar, active goblin list, recent event feed
+- **Context** — token usage vs budget, FIFO eviction status
 - **Retrieval** — cohesion path (count + cosine similarities), factual path (count + keyword hits)
-- **MCP** — appears (green) when the persona called a Knightsrook KB tool this turn. Shows tool name, input, and result for each call.
-- **Injected** — actual memory text that went into the system prompt this turn (cluster, similarity, summary). "cold LLM" in red when nothing was retrieved.
+- **Injected** — memory text injected into the system prompt this turn (cluster, similarity, summary). "cold LLM" in red when nothing was retrieved.
+- **MCP** — appears (green) when the persona called a Knightsrook KB tool this turn. Shows tool name, input, and result.
+- **Consolidation** — appears only when triggered; preserved/summarized/dropped counts and cluster details.
+
+**Left sidebar panels** (default collapsed):
+- **Notes** — per-persona markdown, saved to `data/notes/<persona-id>.md`. Ctrl/Cmd+S to save.
+- **Session** — turn number, active persona
 - **Normalization** — contradictions flagged, additions integrated, length delta
 - **Storage** — turn IDs, archive path
 - **Importance** — entity/fact/preference/decision counts
-- **Consolidation** — appears only when triggered; shows preserved/summarized/dropped counts and cluster details
 
 The persona ID is editable in the header — change it to switch personas without restarting.
-
-A collapsible **Notes** panel sits at the top of the sidebar. Click the header to expand it. Notes are per-persona, saved to `data/notes/<persona-id>.md`. Ctrl/Cmd+S saves from within the textarea.
 
 ## Architecture
 
@@ -123,6 +125,19 @@ Why per-response: the cohesion-weighted edges are the entire differentiator. Und
 | **Postgres + pgvector** | Consolidated memories with embeddings — both cohesion and factual retrieval |
 | **MySQL** | Every turn (raw log) |
 | **data/archive/** | Full JSON per turn, never deleted |
+
+### Mind state machine
+
+A `MindState` instance runs alongside every `Substrate`. It tracks:
+
+- **State** (`dream` → `conversation` → `goblin` / `refractory` → `dream`) — dream is the default; conversation and goblins interrupt it; resolution returns to it.
+- **Cohesion trajectory** — rolling window of the last 5 cohesion scores. A sharp drop (≥2 points below the rolling average) fires a goblin. If the drop occurred with no external stimulus (self-generated content), the substrate also forces refractory mode.
+- **Equilibrium** — derived value (0–10): trajectory average minus a penalty per active goblin.
+- **Goblins** — fired on coherence-loss events. Each carries the trigger text. Goblins resolve (edge repaired) or fade (urgency decayed). State returns to dream when all goblins clear.
+- **Idea budget** — 100k token ceiling on uninterrupted self-directed activity. Resets on every user message. Budget exhaustion forces refractory (prevents runaway generation overnight).
+- **Session death** — `ws.on('close')` calls `substrate.sessionInterrupted()`, which fires a goblin with the last-known cohesion score. Treated as a coherence-loss event, not a clean exit. Cohesion does not persist across the boundary.
+
+All state is visible in real time in the **MIND STATE** right-sidebar panel and exposed via `mindState` in every `TurnTelemetry` payload.
 
 ### Backfill
 
@@ -171,7 +186,8 @@ Nothing is ever deleted. Demotion is a retrieval-speed decision, not a loss deci
 | `PG_USER` | required | Postgres user |
 | `PG_PASS` | required | Postgres password |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama runtime endpoint (serves the local models below) |
-| `OLLAMA_COGNITION_MODEL` | `gemma3:12b` | Local "support brain" for introspection + chaos-goblin finding (reasoning, below the persona's tier) |
+| `OLLAMA_COGNITION_MODEL` | `gemma3:12b` | Local cognitive model (Gemma 3 12B) — wired in `src/cognition.ts` for introspection and goblin-finding. Not yet called in the main loop; reserved for the dreamer. |
+| `OLLAMA_COGNITION_KEEPALIVE` | `0` | How long Ollama keeps the cognition model in VRAM after a call. `0` unloads immediately. Raise when the dreamer loop runs frequently to avoid reload thrash. |
 | `PERSONA_ID` | `default` | Active persona — all storage scoped to this ID |
 
 ### Model roster
@@ -181,10 +197,10 @@ Capability tracks the job — each role gets exactly the model its work demands,
 | Role | Model | Where | Why this tier |
 |------|-------|-------|---------------|
 | **Persona** (the entity) | Sonnet 4.6 | cloud | The actual "who" — present-tense cohesion judgment, the differentiator |
-| **Introspection / chaos-goblin finding** | Gemma 3 12B | local | Reasons over the substrate to *find* incoherence (not solve it); sits below the entity's tier |
+| **Introspection / goblin-finding** (dreamer) | Gemma 3 12B | local | Wired in `src/cognition.ts`; not yet called in the main loop — reserved for the dream state loop |
 | **Embeddings** | `nomic-embed-text` | local | Pure measurement — a purpose-built "ruler," not a brain |
 
-Chaos-goblin *pokes* (corrupt a score, malform a block, reorder turns) are plain deterministic code — no model. The local cognitive model only does the *finding* — recognizing abstract weirdness to flag. Ollama is the runtime that serves the two local models; it is not itself a model.
+Ollama serves both local models; it is not itself a model.
 
 ## Tests
 
