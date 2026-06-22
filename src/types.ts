@@ -21,6 +21,7 @@ export type NormalizationActions = {
 export type Turn = {
   id: string
   role: Role
+  source: 'human' | 'internal' | 'self'
   content: string
   rawLLMContent?: string
   cohesion?: CohesionRating

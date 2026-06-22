@@ -92,6 +92,7 @@ export class Substrate {
     const userTurn: Turn = {
       id: ulid(),
       role: 'user',
+      source: 'human',
       content: userMessage,
       importance: extractImportance(userMessage),
       tokens: estimateTokens(userMessage),
@@ -136,15 +137,19 @@ export class Substrate {
       cycles: 0,
     })
 
-    // Call LLM
-    const response = await this.client.messages.create({
+    // Call LLM via MCP beta — substrate can access external tools (knightsrook KB)
+    const response = await this.client.beta.messages.create({
       model: this.model,
       max_tokens: 4096,
       system: systemPrompt,
       messages: this.buffer.map(t => ({ role: t.role, content: t.content })),
+      mcp_servers: [
+        { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
+      ],
+      betas: ['mcp-client-2025-11-20'],
     })
 
-    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
     let { visible: candidate, cohesion } = parseCohesion(rawText)
 
     // Push back on a missing rating rather than fabricating one. The block is
@@ -153,7 +158,7 @@ export class Substrate {
     // honest absence (cohesion === null) — never a fake neutral score.
     let recovered = false
     if (cohesion === null) {
-      const retry = await this.client.messages.create({
+      const retry = await this.client.beta.messages.create({
         model: this.model,
         max_tokens: 256,
         system: systemPrompt,
@@ -167,8 +172,12 @@ export class Substrate {
               'Reply with ONLY that block (the <cohesion>…</cohesion> JSON) rating that response. Nothing else.',
           },
         ],
+        mcp_servers: [
+          { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
+        ],
+        betas: ['mcp-client-2025-11-20'],
       })
-      const retryText = retry.content[0].type === 'text' ? retry.content[0].text : ''
+      const retryText = (retry.content.find((b: any) => b.type === 'text') as any)?.text ?? ''
       cohesion = parseCohesion(retryText).cohesion
       recovered = cohesion !== null
     }
@@ -195,6 +204,7 @@ export class Substrate {
     const assistantTurn: Turn = {
       id: ulid(),
       role: 'assistant',
+      source: 'self',
       content: normalized,
       rawLLMContent: candidate,
       cohesion: cohesion ?? undefined,

@@ -7,7 +7,8 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 ## Stack
 
 - **Runtime** — Node.js 20+, TypeScript
-- **LLM** — Anthropic SDK (`claude-sonnet-4-6` by default; swap via `MODEL` env var)
+- **LLM** — Anthropic SDK (`claude-sonnet-4-6` by default; swap via `MODEL` env var), via `beta.messages.create` with MCP connector enabled
+- **MCP** — Knightsrook Knowledge Base at `https://mcp.knightsrook.com/mcp` (`knightsrook` server, `mcp-client-2025-11-20` beta)
 - **Cohesion storage** — Postgres + pgvector (Docker) — vector similarity retrieval via `nomic-embed-text`
 - **Factual storage** — MySQL — structured turn log + importance-tagged recall
 - **Embeddings** — Ollama (`nomic-embed-text`, 768 dims, fully local)
@@ -91,6 +92,10 @@ A turn where a metaphor unifies three earlier threads is high cohesion but may c
 The cohesion block requirement is placed at the **top** of the system prompt and labeled non-negotiable so it isn't deprioritized as context grows. If the model still omits the block, the substrate **pushes back**: it re-prompts the model once, demanding the block for that exact response. Only if the model still refuses does the turn record an honest absence (cohesion `null`) — the substrate never fabricates a neutral score. A fake rating would poison consolidation, which weights turns by cohesion; an unrated turn is simply treated as unrated (peak `0`, never preserved on its own merit).
 
 Because the cohesion-weighted edges are the entire differentiator from a stock LLM, an unrated turn is treated as a degradation event, not a benign gap. Telemetry exposes **cohesion coverage** (`ratedTurns / total`) on every turn and flags any turn that only got a rating after the re-prompt (`recovered`). Coverage is **durable**: the counters are seeded at startup from a persona-scoped `COUNT` over persisted assistant turns (`cohesion_score IS NULL` vs not), so the figure reflects the persona's entire lifetime, not just the current process. A falling coverage percentage is the early warning that the system is regressing toward a plain model — the conversation still flows, but the signal that makes it *this* system is thinning.
+
+### Turn provenance
+
+Every `Turn` carries a `source` field (`'human' | 'internal' | 'self'`) for attribution integrity — not for differential weighting. All substrate logic treats turns equally regardless of source. Current assignments: user messages → `'human'`, persona responses → `'self'`. `'internal'` is reserved for substrate-generated injections (e.g. memory reinsertion as a turn).
 
 ### Loop
 
