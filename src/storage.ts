@@ -82,8 +82,9 @@ export class Storage {
         cohesion_score, cohesion_drivers, cohesion_shifts,
         importance_entities, importance_facts, importance_preferences, importance_decisions,
         normalization_contradictions, normalization_additions,
+        retrieval_cohesion_count, retrieval_cohesion_sims, retrieval_factual_count,
         tokens, timestamp
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE content = VALUES(content)`,
       [
         turn.id, this.personaId, turn.role, turn.content, turn.rawLLMContent ?? null,
@@ -94,6 +95,9 @@ export class Storage {
         JSON.stringify(turn.importance?.decisions ?? []),
         JSON.stringify(turn.normalizationApplied?.contradictionsFound ?? []),
         JSON.stringify(turn.normalizationApplied?.additionsIntegrated ?? []),
+        turn.retrieval?.cohesionCount ?? null,
+        turn.retrieval ? JSON.stringify(turn.retrieval.cohesionSims) : null,
+        turn.retrieval?.factualCount ?? null,
         turn.tokens, turn.timestamp,
       ]
     )

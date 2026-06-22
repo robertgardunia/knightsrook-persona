@@ -141,6 +141,12 @@
   .notes-saved { font-size: 10px; color: var(--green); align-self: flex-end; opacity: 0; transition: opacity 0.3s; }
   .notes-saved.show { opacity: 1; }
 
+  .msg-footer {
+    margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
+    font-size: 10px; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -195,6 +201,37 @@ const personaEl  = document.getElementById('personaId')
 
 let thinking = null
 
+async function loadHistory(personaId) {
+  const r = await fetch(`/api/history/${encodeURIComponent(personaId)}?limit=40`)
+  const turns = await r.json()
+  if (!turns.length) return
+  const empty = messagesEl.querySelector('.empty-state')
+  if (empty) empty.remove()
+  for (const t of turns) {
+    const cls = t.role === 'user' ? 'user' : 'persona'
+    const role = t.role === 'user' ? 'YOU' : 'PERSONA'
+    const el = document.createElement('div')
+    el.className = `msg ${cls}`
+    let footer = ''
+    if (t.role === 'assistant') {
+      const d = new Date(t.timestamp)
+      const ts = `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+      const sims = t.retrieval_cohesion_sims
+        ? (Array.isArray(t.retrieval_cohesion_sims) ? t.retrieval_cohesion_sims : JSON.parse(t.retrieval_cohesion_sims))
+        : []
+      const rBar = buildRetrievalLabel(t.retrieval_cohesion_count, sims, t.retrieval_factual_count)
+      footer = `<div class="msg-footer">
+        <span>PERSONA · ${ts}</span>
+        ${rBar}
+        <span>turn #${t.turn_number}</span>
+      </div>`
+    }
+    el.innerHTML = `<div class="role">${role}</div>${footer}${escHtml(t.content)}`
+    messagesEl.appendChild(el)
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight
+}
+
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data)
 
@@ -203,13 +240,14 @@ ws.onmessage = (e) => {
     personaEl.value = msg.personaId
     document.title = `PERSONA · ${msg.personaId}`
     loadNotes(msg.personaId)
+    loadHistory(msg.personaId)
     return
   }
 
   if (thinking) { thinking.remove(); thinking = null }
 
   if (msg.type === 'response') {
-    addMessage('PERSONA', msg.text, 'persona')
+    addMessage('PERSONA', msg.text, 'persona', msg.telemetry)
     renderSidebar(msg.telemetry, msg.importanceBanner)
   } else if (msg.type === 'error') {
     addMessage('ERROR', msg.text, 'persona')
@@ -256,13 +294,27 @@ notesText.addEventListener('keydown', e => { if (e.key === 's' && (e.ctrlKey || 
 
 let defaultPersonaId = 'default'
 
-function addMessage(role, text, cls) {
+function addMessage(role, text, cls, telemetry) {
   const empty = messagesEl.querySelector('.empty-state')
   if (empty) empty.remove()
 
   const el = document.createElement('div')
   el.className = `msg ${cls}`
-  el.innerHTML = `<div class="role">${role}</div>${escHtml(text)}`
+
+  let footer = ''
+  if (telemetry && cls === 'persona') {
+    const _d = new Date()
+    const ts = `${(_d.getMonth()+1).toString().padStart(2,'0')}/${_d.getDate().toString().padStart(2,'0')}/${_d.getFullYear()} ${_d.getHours().toString().padStart(2,'0')}:${_d.getMinutes().toString().padStart(2,'0')}`
+    const r = telemetry.retrieval
+    const rBar = buildRetrievalLabel(r.cohesion.count, r.cohesion.similarities, r.factual.count)
+    footer = `<div class="msg-footer">
+      <span>PERSONA · ${ts}</span>
+      ${rBar}
+      <span>turn #${telemetry.turnNumber}</span>
+    </div>`
+  }
+
+  el.innerHTML = `<div class="role">${role}</div>${footer}${escHtml(text)}`
   messagesEl.appendChild(el)
   messagesEl.scrollTop = messagesEl.scrollHeight
   return el
@@ -295,6 +347,27 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = 'auto'
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px'
 })
+
+function buildRetrievalLabel(cohesionCount, cohesionSims, factualCount) {
+  const c = cohesionCount ?? 0
+  const f = factualCount ?? 0
+  const avgSim = c > 0 && cohesionSims && cohesionSims.length
+    ? cohesionSims.reduce((a, b) => a + b, 0) / cohesionSims.length
+    : 0
+  // substrate fill: avg similarity (0–1), factual adds a small bump
+  const subPct = Math.min(100, Math.round(avgSim * 100))
+  const factPct = Math.min(100 - subPct, f > 0 ? Math.min(f * 10, 30) : 0)
+  const emptyPct = 100 - subPct - factPct
+  const label = c > 0 || f > 0
+    ? `sub:${c}${avgSim ? ' ' + avgSim.toFixed(3) : ''}${f > 0 ? ' fact:' + f : ''}`
+    : 'llm'
+  return `<span title="${label}" style="display:inline-flex;align-items:center;justify-content:center;width:100px">
+    <span style="display:inline-flex;width:100px;height:5px;border-radius:3px;overflow:hidden;background:var(--border)">
+      <span style="width:${subPct}%;background:#4ade80"></span>
+      <span style="width:${factPct}%;background:#60a5fa"></span>
+    </span>
+  </span>`
+}
 
 // ── Sidebar renderer ──
 function bar(value, max, color = '#7c6af7') {
@@ -356,7 +429,8 @@ function renderSidebar(t, importanceBanner) {
         <div class="bar-label"><span>${t.contextTokens.toLocaleString()} tokens</span><span>${t.contextBudget.toLocaleString()} budget</span></div>
         ${bar(t.contextTokens, t.contextBudget, ctxColor)}
       </div>
-      ${kv('consolidates at', '25% = ' + Math.round(t.contextBudget * 0.25).toLocaleString() + ' tokens')}
+      ${kv('capture', 'every response → weighted memory')}
+      ${kv('eviction', 'FIFO over budget (lossless)')}
     </div>
   </div>`
 
@@ -412,12 +486,12 @@ function renderSidebar(t, importanceBanner) {
       `<div class="kv"><span class="k">${escHtml(c.cluster)}</span><span class="v">${c.turnCount} turns · peak ${c.cohesionPeak} · ${c.tier}</span></div>`
     ).join('')
     html += `<div class="consolidation-banner">
-      <div class="head">⚡ CONSOLIDATION</div>
+      <div class="head">⚡ CAPTURE</div>
       ${kv('buffer before', t.consolidation.bufferTokensBefore.toLocaleString() + ' tokens')}
-      ${kv('preserved', t.consolidation.preserved + ' turns')}
-      ${kv('summarized', t.consolidation.summarized.length + ' clusters')}
+      ${kv('captured', t.consolidation.summarized.length + ' memory')}
       ${clusters}
-      ${kv('dropped', t.consolidation.dropped + ' turns')}
+      ${kv('hot buffer', t.consolidation.preserved + ' turns')}
+      ${kv('evicted', t.consolidation.dropped + ' turns (FIFO)')}
       ${kv('buffer after', t.consolidation.bufferTokensAfter.toLocaleString() + ' tokens')}
     </div>`
   }

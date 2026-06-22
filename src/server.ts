@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import mysql from 'mysql2/promise'
 import { Substrate } from './substrate.js'
 import { generatePersonaName } from './names.js'
 
@@ -51,6 +52,31 @@ mkdirSync(notesDir, { recursive: true })
 function notesPath(personaId: string): string {
   return join(notesDir, `${personaId.replace(/[^a-z0-9\-_]/gi, '_')}.md`)
 }
+
+const dbPool = mysql.createPool({
+  host: process.env.DB_HOST ?? '127.0.0.1',
+  port: Number(process.env.DB_PORT ?? 3306),
+  database: process.env.DB_NAME ?? 'knightsrook_persona',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  waitForConnections: true,
+  connectionLimit: 3,
+})
+
+app.get('/api/history/:personaId', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 40), 200)
+  const [rows] = await dbPool.query<any[]>(
+    `SELECT role, content, cohesion_score, cohesion_drivers, timestamp,
+            retrieval_cohesion_count, retrieval_cohesion_sims, retrieval_factual_count,
+            (SELECT COUNT(*) FROM turns t2 WHERE t2.persona_id = t1.persona_id AND t2.timestamp <= t1.timestamp AND t2.role = 'assistant') AS turn_number
+     FROM turns t1
+     WHERE persona_id = ?
+     ORDER BY timestamp DESC
+     LIMIT ?`,
+    [req.params.personaId, limit]
+  )
+  res.json(rows.reverse())
+})
 
 app.get('/api/notes/:personaId', (req, res) => {
   const p = notesPath(req.params.personaId)

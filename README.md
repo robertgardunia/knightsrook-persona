@@ -12,7 +12,7 @@ The LLM is unmodified. The substrate sits between user and model: it rates cohes
 - **Factual storage** — MySQL — structured turn log + importance-tagged recall
 - **Embeddings** — Ollama (`nomic-embed-text`, 768 dims, fully local)
 - **Archive** — JSON file per turn (`data/archive/`), never deleted
-- **Interface** — CLI REPL
+- **Interface** — Web chat UI (`http://localhost:5030`) with live telemetry sidebar
 
 ## Persona naming
 

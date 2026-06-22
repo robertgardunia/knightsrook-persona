@@ -26,6 +26,7 @@ export type Turn = {
   cohesion?: CohesionRating
   importance?: ImportanceTags
   normalizationApplied?: NormalizationActions
+  retrieval?: { cohesionCount: number; cohesionSims: number[]; factualCount: number }
   tokens: number
   timestamp: number
 }

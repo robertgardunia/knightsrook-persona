@@ -185,6 +185,11 @@ export class Substrate {
       cohesion: cohesion ?? undefined,
       importance: importanceTags,
       normalizationApplied: actions,
+      retrieval: {
+        cohesionCount: cohesionMems.length,
+        cohesionSims: cohesionMems.map(m => m.similarity ?? 0),
+        factualCount: factualMems.length,
+      },
       tokens: estimateTokens(normalized),
       timestamp: Date.now(),
     }
