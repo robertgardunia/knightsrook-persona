@@ -16,7 +16,9 @@ describe('buildSystemPrompt', () => {
 
   it('omits cohesion context section when empty', () => {
     const prompt = buildSystemPrompt('', '', { catches: 0, cycles: 0 })
-    expect(prompt).not.toContain('What you remember')
+    // 'What you remember' header only appears in the dynamic memory injection, not the static requirement block
+    const parts = prompt.split('[SUBSTRATE INJECTION]')
+    expect(parts[1] ?? '').not.toContain('What you remember — speak from this')
   })
 
   it('includes factual context when provided', () => {

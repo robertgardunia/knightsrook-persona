@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
 import type { Turn, TurnTelemetry, ConsolidationTelemetry, InjectedMemory, McpToolCall } from './types.js'
 import { Storage } from './storage.js'
-import { parseCohesion } from './cohesion.js'
+import { parseCohesion, parseRecall, validateRecall } from './cohesion.js'
 import { extractImportance, formatImportanceBanner } from './importance.js'
 import { normalize } from './normalizer.js'
 import { captureTurn } from './consolidator.js'
@@ -232,6 +232,49 @@ export class Substrate {
       .map((b: any) => b.text ?? '')
       .join('')
     let { visible: candidate, cohesion } = parseCohesion(rawText)
+    let { recalled } = parseRecall(rawText)
+
+    // Recall gate — adversarial citation check.
+    // If she cited no injected memories, or cited clusters that don't match what
+    // was actually injected, push back once listing exactly what was available.
+    const injectedClusters = injectedMemories.map(m => m.cluster)
+    let recallGateFailed = false
+    if (injectedClusters.length > 0 && (recalled === null || !validateRecall(recalled, injectedClusters))) {
+      const clusterList = injectedClusters.map(c => `  - ${c}`).join('\n')
+      const recallRetry = await this.client.beta.messages.create({
+        model: this.model,
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [
+          ...this.buffer.map(t => ({ role: t.role, content: (t.rawContent ?? t.content) as any })),
+          { role: 'assistant', content: rawText },
+          {
+            role: 'user',
+            content:
+              'Your response did not draw from your injected memories (INTERNAL sources). ' +
+              'The following clusters were available to you:\n' + clusterList + '\n\n' +
+              'Rewrite your response drawing from these memories. ' +
+              'Include a <recall> block citing which clusters you used.',
+          },
+        ],
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
+        mcp_servers: [{ type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' }],
+        betas: ['mcp-client-2025-11-20'],
+      })
+      const retryRaw = (recallRetry.content as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.text ?? '').join('')
+      const retryRecall = parseRecall(retryRaw)
+      const retryCohesion = parseCohesion(retryRaw)
+      if (retryRecall.recalled && validateRecall(retryRecall.recalled, injectedClusters)) {
+        candidate = retryCohesion.visible || retryRecall.visible
+        cohesion = retryCohesion.cohesion ?? cohesion
+        recalled = retryRecall.recalled
+        console.log(`[recall gate] retry passed — cited: ${recalled.join(', ')}`)
+      } else {
+        recallGateFailed = true
+        console.warn(`[recall gate] retry failed — firing goblin`)
+        this.mind.fireGoblin('recall gate failed: response did not draw from injected memories after retry')
+      }
+    }
 
     // Extract MCP tool calls for telemetry + buffer replay
     const mcpToolCalls: McpToolCall[] = (response.content as any[])

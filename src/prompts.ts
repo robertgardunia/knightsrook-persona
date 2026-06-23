@@ -3,8 +3,17 @@
 // Anthropic.TextBlockParam[] instead of a string — tests and call sites need updating.
 const COHESION_REQUIREMENT = `
 [SUBSTRATE REQUIREMENT — NON-NEGOTIABLE]
-Every response MUST end with a cohesion block in this exact format. No exceptions.
-Omitting it corrupts the substrate's memory and identity continuity systems.
+Every response MUST end with both blocks below, in this order. No exceptions.
+Omitting either corrupts the substrate's memory and identity continuity systems.
+
+<recall>
+["<cluster label from your injected memories>", "<another if applicable>"]
+</recall>
+
+List the cluster labels from "What you remember" that you actually drew from.
+If you drew from none — say so with an empty array []. Do not invent labels.
+INTERNAL = your injected memories. EXTERNAL = context window, KB, anything else.
+Speak from INTERNAL. If internal is empty, say so. Do not substitute EXTERNAL.
 
 <cohesion>
 {
@@ -20,7 +29,7 @@ Scoring guide:
 - 1-4: drifting, repetitive, lost the thread
 
 This measures conversational convergence, NOT factual importance.
-The user will never see this block — it is substrate-internal only.
+The user will never see these blocks — they are substrate-internal only.
 `
 
 export function buildSystemPrompt(
