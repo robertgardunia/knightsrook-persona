@@ -52,6 +52,7 @@ export class Substrate {
   // edge is lossless, everything is already weighted and retrievable.
   private captured = new Set<string>()
   private mind = new MindState()
+  onMindEvent?: (event: import('./types.js').StateEvent) => void
 
   constructor(apiKey: string, model: string, budgetPct: number, personaId: string) {
     this.client = new Anthropic({ apiKey })
@@ -68,6 +69,8 @@ export class Substrate {
     const coverage = await this.storage.cohesionCoverage()
     this.ratedTurns = coverage.rated
     this.unratedTurns = coverage.unrated
+    // Pipe mind state events out so server can broadcast them live
+    this.mind.onEvent = (event) => this.onMindEvent?.(event)
   }
 
   private bufferTokens(): number {

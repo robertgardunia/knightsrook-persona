@@ -137,7 +137,7 @@ A `MindState` instance runs alongside every `Substrate`. It tracks:
 - **Idea budget** — 100k token ceiling on uninterrupted self-directed activity. Resets on every user message. Budget exhaustion forces refractory (prevents runaway generation overnight).
 - **Session death** — `ws.on('close')` calls `substrate.sessionInterrupted()`, which fires a goblin with the last-known cohesion score. Treated as a coherence-loss event, not a clean exit. Cohesion does not persist across the boundary. Clean server restarts (SIGTERM/SIGINT) set `isShuttingDown` and skip this call — a planned shutdown is not a coherence event.
 
-All state is visible in real time in the **MIND STATE** right-sidebar panel and exposed via `mindState` in every `TurnTelemetry` payload.
+All state is visible in real time in the **MIND STATE** right-sidebar panel and exposed via `mindState` in every `TurnTelemetry` payload. Mind state transitions (dream ↔ conversation ↔ goblin ↔ refractory) are broadcast live via WebSocket so the UI reflects the current state during active turns, not just after they complete.
 
 ### Dream loop
 

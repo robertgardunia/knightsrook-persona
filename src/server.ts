@@ -109,6 +109,7 @@ async function getSubstrate(personaId: string): Promise<Substrate> {
   if (!substrates.has(personaId)) {
     const s = new Substrate(process.env.ANTHROPIC_API_KEY!, model, budgetPct, personaId)
     await s.init()
+    s.onMindEvent = (event) => broadcastDreamEvent(personaId, { event })
     substrates.set(personaId, s)
 
     const dreamer = new Dreamer(s, s.getStorage(), (event) => {

@@ -13,6 +13,7 @@ export class MindState {
   private trajectory: number[] = []
   private ideaBudgetUsed = 0
   private events: StateEvent[] = []
+  onEvent?: (event: StateEvent) => void
 
   // ── State transitions ──────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ export class MindState {
   private emit(event: StateEvent): void {
     this.events.push(event)
     if (this.events.length > MAX_RECENT_EVENTS) this.events.shift()
+    this.onEvent?.(event)
   }
 
   // ── Snapshot (cortex materialized view) ───────────────────────────────────
