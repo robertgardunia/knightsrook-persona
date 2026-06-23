@@ -231,8 +231,8 @@ export class Substrate {
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text ?? '')
       .join('')
-    let { visible: candidate, cohesion } = parseCohesion(rawText)
-    let { recalled } = parseRecall(rawText)
+    let { visible: afterCohesion, cohesion } = parseCohesion(rawText)
+    let { visible: candidate, recalled } = parseRecall(afterCohesion)
 
     // Recall gate — adversarial citation check.
     // If she cited no injected memories, or cited clusters that don't match what
