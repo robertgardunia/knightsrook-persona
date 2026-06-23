@@ -191,7 +191,13 @@ export class Dreamer {
         const parsed = JSON.parse(extractJson(raw)) as {
           node: string; why: string; cohesion: number; continue: boolean
         }
-        chain.push({ node: parsed.node, why: parsed.why, cohesion: Number(parsed.cohesion) || 5 })
+        const stepCohesion = Number(parsed.cohesion) || 5
+        chain.push({ node: parsed.node, why: parsed.why, cohesion: stepCohesion })
+
+        // Update confidence of the node we just stepped from.
+        // High cohesion = well-integrated (+), low cohesion = shaky (-).
+        const confidenceDelta = stepCohesion >= 8 ? 0.05 : stepCohesion >= 6 ? 0.01 : -0.03
+        await this.storage.updateConfidence(current.id, confidenceDelta)
 
         if (!parsed.continue) break
 

@@ -45,6 +45,7 @@ export class Storage {
     })
 
     await this.migrateMysql()
+    await this.migratePostgres()
   }
 
   async ensureReady() {
@@ -83,6 +84,13 @@ export class Storage {
     await this.addColumnIfMissing('retrieval_cohesion_count', 'INT', 'AFTER normalization_additions')
     await this.addColumnIfMissing('retrieval_cohesion_sims', 'JSON', 'AFTER retrieval_cohesion_count')
     await this.addColumnIfMissing('retrieval_factual_count', 'INT', 'AFTER retrieval_cohesion_sims')
+  }
+
+  private async migratePostgres(): Promise<void> {
+    await this.pg.query(`
+      ALTER TABLE consolidated_memories
+        ADD COLUMN IF NOT EXISTS confidence FLOAT NOT NULL DEFAULT 0.0
+    `)
   }
 
   private async addColumnIfMissing(column: string, definition: string, position: string): Promise<void> {
@@ -203,15 +211,15 @@ export class Storage {
       `INSERT INTO consolidated_memories (
         id, persona_id, cluster, turn_ids, summary, embedding, cohesion_peak,
         merged_entities, merged_facts, merged_preferences, merged_decisions,
-        tier, last_retrieved, retrieval_count, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6::vector,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        tier, last_retrieved, retrieval_count, confidence, created_at
+      ) VALUES ($1,$2,$3,$4,$5,$6::vector,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
       ON CONFLICT (id) DO UPDATE SET summary = EXCLUDED.summary`,
       [
         memory.id, this.personaId, memory.cluster,
         JSON.stringify(memory.turnIds), memory.summary, vec, memory.cohesionPeak,
         JSON.stringify(memory.mergedEntities), JSON.stringify(memory.mergedFacts),
         JSON.stringify(memory.mergedPreferences), JSON.stringify(memory.mergedDecisions),
-        memory.tier, memory.lastRetrieved, memory.retrievalCount, memory.createdAt,
+        memory.tier, memory.lastRetrieved, memory.retrievalCount, memory.confidence ?? 0.0, memory.createdAt,
       ]
     )
   }
@@ -307,17 +315,36 @@ export class Storage {
     return scored.map(({ mem, hits }: any) => ({ ...mem, keywordHits: hits }))
   }
 
-  // Dream seed — one random memory as the chain entry point.
-  // No pre-filtering by cohesion; the association chain finds its own path.
+  // Dream seed — biased toward low-confidence memories (things not yet well understood).
+  // Picks from the bottom 40% by confidence with random tie-breaking, so high-confidence
+  // nodes can still be selected but are deprioritized as entry points.
   async retrieveDreamSeed(): Promise<ConsolidatedMemory | null> {
     const { rows } = await this.pg.query(
-      `SELECT * FROM consolidated_memories
-       WHERE persona_id = $1 AND embedding IS NOT NULL
+      `SELECT * FROM (
+         SELECT * FROM consolidated_memories
+         WHERE persona_id = $1 AND embedding IS NOT NULL
+         ORDER BY confidence ASC, RANDOM()
+         LIMIT GREATEST(1, (SELECT COUNT(*) FROM consolidated_memories WHERE persona_id = $1) * 2 / 5)
+       ) sub
        ORDER BY RANDOM()
        LIMIT 1`,
       [this.personaId]
     )
     return rows.length > 0 ? this.rowToMemory(rows[0]) : null
+  }
+
+  // Adjust confidence of a memory after a dream chain step.
+  // delta > 0: step was high-cohesion, memory is well-integrated.
+  // delta < 0: step was low-cohesion or produced contradiction.
+  // Clamped to [0, 1]. Applies a small decay each call so confidence erodes without reinforcement.
+  async updateConfidence(id: string, delta: number): Promise<void> {
+    const DECAY = 0.005
+    await this.pg.query(
+      `UPDATE consolidated_memories
+       SET confidence = GREATEST(0.0, LEAST(1.0, confidence + $1 - $2))
+       WHERE id = $3`,
+      [delta, DECAY, id]
+    )
   }
 
   // Nearest neighbours to a given embedding — used by the dream chain to find
@@ -351,6 +378,7 @@ export class Storage {
     tier: row.tier,
     lastRetrieved: row.last_retrieved,
     retrievalCount: row.retrieval_count,
+    confidence: Number(row.confidence ?? 0),
     createdAt: row.created_at,
   })
 }

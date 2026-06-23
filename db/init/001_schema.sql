@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS consolidated_memories (
   tier              VARCHAR(10) NOT NULL DEFAULT 'warm',
   last_retrieved    BIGINT,
   retrieval_count   INTEGER NOT NULL DEFAULT 0,
+  confidence        FLOAT NOT NULL DEFAULT 0.0,
   created_at        BIGINT NOT NULL
 );
 

@@ -52,6 +52,7 @@ export type ConsolidatedMemory = {
   tier: 'hot' | 'warm' | 'cold' | 'archive'
   lastRetrieved: number
   retrievalCount: number
+  confidence: number
   createdAt: number
 }
 
