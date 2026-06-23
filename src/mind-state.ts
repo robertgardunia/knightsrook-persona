@@ -27,7 +27,8 @@ export class MindState {
   recordCohesion(score: number, externalStimulus: boolean): void {
     const avg = this.trajectoryAvg()
 
-    if (avg !== null && (avg - score) >= SHARP_DROP_THRESHOLD) {
+    // Suppress drop-detection while a goblin or refractory is already active — goblins must not spawn goblins.
+    if (avg !== null && (avg - score) >= SHARP_DROP_THRESHOLD && this.state !== 'goblin' && this.state !== 'refractory') {
       this.emit({ type: 'cohesion_drop', previous: avg, current: score, delta: score - avg, externalStimulus, timestamp: Date.now() })
 
       if (!externalStimulus) {

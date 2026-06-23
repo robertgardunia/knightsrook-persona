@@ -131,7 +131,7 @@ Why per-response: the cohesion-weighted edges are the entire differentiator. Und
 A `MindState` instance runs alongside every `Substrate`. It tracks:
 
 - **State** (`dream` → `conversation` → `goblin` / `refractory` → `dream`) — dream is the default; conversation and goblins interrupt it; resolution returns to it.
-- **Cohesion trajectory** — rolling window of the last 5 cohesion scores. A sharp drop (≥2 points below the rolling average) fires a goblin. If the drop occurred with no external stimulus (self-generated content), the substrate also forces refractory mode.
+- **Cohesion trajectory** — rolling window of the last 5 cohesion scores. A sharp drop (≥2 points below the rolling average) fires a goblin — but only when the system is in `dream` or `conversation` state. Drop-detection is suppressed while a goblin or refractory is already active (goblins must not spawn goblins). If the drop occurred with no external stimulus (self-generated content), the substrate also forces refractory mode.
 - **Equilibrium** — derived value (0–10): trajectory average minus a penalty per active goblin.
 - **Goblins** — fired on coherence-loss events. Each carries the trigger text. Goblins resolve (edge repaired) or fade (urgency decayed). State returns to dream when all goblins clear.
 - **Idea budget** — 100k token ceiling on uninterrupted self-directed activity. Resets on every user message. Budget exhaustion forces refractory (prevents runaway generation overnight).
