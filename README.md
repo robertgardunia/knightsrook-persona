@@ -109,7 +109,7 @@ Every `Turn` carries a `source` field (`'human' | 'internal' | 'self'`) for attr
 3. Two-path retrieval:
    - **Cohesion path** — two-pass retrieval. Pass 1: blended score (70% cosine + 30% recency over 7 days), top 10. Pass 2 (wide-net fallback): if best similarity < 0.45 (topic divergence, pivot, non-sequitur), pulls the 5 most recent high-cohesion memories regardless of topic distance and merges them in. Handles unexpected correlations and cold re-entry without requiring a pre-built cross-domain graph.
    - **Factual path** — keyword overlap against importance fields in Postgres (runs in parallel with embedding)
-4. LLM called with substrate-curated system prompt (KB tool use: one topic at a time, synthesize before fetching next) — streamed via raw SSE chunk iteration; `mcp_tool_use` and `mcp_tool_result` blocks surface as they arrive and are piped to the chat window in real time
+4. System prompt assembled: substrate requirement block (top, non-negotiable) → retrieved cohesion memories labeled **"What you remember — speak from this"** → factual context labeled **"Specific things you know about Robert and this work"** → KB tool use instructions (reference tool, not her memory). LLM called with this prompt — streamed via raw SSE chunk iteration; `mcp_tool_use` and `mcp_tool_result` blocks surface as they arrive and are piped to the chat window in real time
 5. Response parsed for hidden `<cohesion>` block
 6. Normalizer checks response against retrieved memories (contradiction detection)
 7. Assistant turn saved to MySQL + JSON archive

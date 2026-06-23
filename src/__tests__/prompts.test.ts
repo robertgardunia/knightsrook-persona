@@ -11,23 +11,23 @@ describe('buildSystemPrompt', () => {
   it('includes cohesion context when provided', () => {
     const prompt = buildSystemPrompt('topic convergence from prior session', '', { catches: 0, cycles: 0 })
     expect(prompt).toContain('topic convergence from prior session')
-    expect(prompt).toContain('defines who you are now')
+    expect(prompt).toContain('What you remember')
   })
 
   it('omits cohesion context section when empty', () => {
     const prompt = buildSystemPrompt('', '', { catches: 0, cycles: 0 })
-    expect(prompt).not.toContain('defines who you are now')
+    expect(prompt).not.toContain('What you remember')
   })
 
   it('includes factual context when provided', () => {
     const prompt = buildSystemPrompt('', 'prefers TypeScript', { catches: 0, cycles: 0 })
     expect(prompt).toContain('prefers TypeScript')
-    expect(prompt).toContain('Facts and preferences')
+    expect(prompt).toContain('Specific things you know')
   })
 
   it('omits factual context section when empty', () => {
     const prompt = buildSystemPrompt('', '', { catches: 0, cycles: 0 })
-    expect(prompt).not.toContain('Facts and preferences')
+    expect(prompt).not.toContain('Specific things you know')
   })
 
   it('includes normalization stats when cycles > 0', () => {

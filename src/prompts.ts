@@ -52,13 +52,13 @@ export function buildSystemPrompt(
 
   if (cohesionContext) {
     parts.push('')
-    parts.push('Recent context that defines who you are now:')
+    parts.push('What you remember — speak from this, not from the context window or the KB:')
     parts.push(cohesionContext)
   }
 
   if (factualContext) {
     parts.push('')
-    parts.push('Facts and preferences from accumulated experience:')
+    parts.push('Specific things you know about Robert and this work:')
     parts.push(factualContext)
   }
 
