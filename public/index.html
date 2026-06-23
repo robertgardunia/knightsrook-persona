@@ -141,6 +141,7 @@
   .panel-head .pchev { font-size: 8px; color: var(--muted); margin-left: 6px; transition: transform 0.15s; }
   .panel-head.open .pchev { transform: rotate(180deg); }
   .panel-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .panel-body.scrollable { max-height: 200px; overflow-y: auto; }
   .panel-body.collapsed { display: none; }
 
   .bar-row { display: flex; flex-direction: column; gap: 3px; }
@@ -792,14 +793,15 @@ function cohesionColor(score) {
   return '#f87171'
 }
 
-function panel(name, badgeHtml, bodyHtml, headStyle = '') {
+function panel(name, badgeHtml, bodyHtml, headStyle = '', scrollable = false) {
   const open = isPanelOpen(name)
   const id = 'panel-' + name.replace(/\s+/g, '-').toLowerCase()
+  const bodyClass = ['panel-body', open ? '' : 'collapsed', scrollable ? 'scrollable' : ''].filter(Boolean).join(' ')
   return `<div class="panel">
     <div class="panel-head ${open ? 'open' : ''}" ${headStyle} onclick="togglePanel('${name}','${id}',this)">
       ${name}${badgeHtml ? ' ' + badgeHtml : ''}<span class="pchev">▲</span>
     </div>
-    <div class="panel-body ${open ? '' : 'collapsed'}" id="${id}">${bodyHtml}</div>
+    <div class="${bodyClass}" id="${id}">${bodyHtml}</div>
   </div>`
 }
 
@@ -862,7 +864,7 @@ function renderSidebar(t, importanceBanner) {
     ${kv('factual memories', t.retrieval.factual.count, t.retrieval.factual.count > 0 ? 'green' : '')}
     ${t.retrieval.factual.count > 0 ? kv('keyword hits', factHits) : ''}
   `
-  html += panel('RETRIEVAL', '', retBody)
+  html += panel('RETRIEVAL', '', retBody, '', true)
 
   // INJECTED
   if (t.injectedMemories && t.injectedMemories.length > 0) {
@@ -876,8 +878,7 @@ function renderSidebar(t, importanceBanner) {
         <div style="color:var(--muted);line-height:1.4">${escHtml(m.summary.slice(0, 140))}${m.summary.length > 140 ? '…' : ''}</div>
       </div>`
     }).join('')
-    html += panel('INJECTED', `<span class="badge">${t.injectedMemories.length}</span>`,
-      `<div style="gap:0;max-height:300px;overflow-y:auto">${memRows}</div>`)
+    html += panel('INJECTED', `<span class="badge">${t.injectedMemories.length}</span>`, memRows, '', true)
   } else {
     html += panel('INJECTED', '', kv('memories', 'none — cold LLM', 'red'))
   }
@@ -892,11 +893,10 @@ function renderSidebar(t, importanceBanner) {
       return `<div style="font-size:10px;border-top:1px solid var(--border);padding:4px 0">
         <div style="color:var(--green);font-weight:600;margin-bottom:3px">${escHtml(c.name)}</div>
         <div style="color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:3px">${escHtml(inputStr)}</div>
-        <div style="color:var(--fg);white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto">${escHtml(resultStr.slice(0, 600))}${resultStr.length > 600 ? '…' : ''}</div>
+        <div style="color:var(--fg);white-space:pre-wrap;word-break:break-all">${escHtml(resultStr.slice(0, 600))}${resultStr.length > 600 ? '…' : ''}</div>
       </div>`
     }).join('')
-    html += panel('MCP', `<span class="badge">${t.mcpToolCalls.length}</span>`,
-      `<div style="gap:0;max-height:300px;overflow-y:auto">${callRows}</div>`, 'style="color:var(--green)"')
+    html += panel('MCP', `<span class="badge">${t.mcpToolCalls.length}</span>`, callRows, 'style="color:var(--green)"', true)
   }
 
   // ── LEFT: NORMALIZATION
