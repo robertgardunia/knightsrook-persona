@@ -144,12 +144,17 @@ describe('MindState', () => {
       expect(ms.snapshot().state).toBe('dream')
     })
 
-    it('blocks a second goblin while one is already active', () => {
+    it('queues a second goblin while one is already active', () => {
       const id1 = ms.fireGoblin('first')
       const id2 = ms.fireGoblin('second')
       expect(id2).toBeNull()
       expect(ms.snapshot().activeGoblins).toHaveLength(1)
+      // resolving first dequeues second — still in goblin state
       ms.resolveGoblin(id1!)
+      expect(ms.snapshot().state).toBe('goblin')
+      expect(ms.snapshot().activeGoblins).toHaveLength(1)
+      // resolve the dequeued goblin — now returns to dream
+      ms.resolveGoblin(ms.snapshot().activeGoblins[0].id)
       expect(ms.snapshot().state).toBe('dream')
     })
 

@@ -9,6 +9,7 @@ const MAX_RECENT_EVENTS = 20
 export class MindState {
   private state: MindStateLabel = 'dream'
   private goblins: Map<string, Goblin> = new Map()
+  private goblinQueue: string[] = []
   private trajectory: number[] = []
   private ideaBudgetUsed = 0
   private events: StateEvent[] = []
@@ -53,7 +54,15 @@ export class MindState {
   // ── Goblins ────────────────────────────────────────────────────────────────
 
   fireGoblin(trigger: string): string | null {
-    if (this.activeGoblins().length > 0) return null
+    if (this.activeGoblins().length > 0) {
+      this.goblinQueue.push(trigger)
+      this.emit({ type: 'goblin_queued', trigger, queueDepth: this.goblinQueue.length, timestamp: Date.now() })
+      return null
+    }
+    return this.activateGoblin(trigger)
+  }
+
+  private activateGoblin(trigger: string): string {
     const id = ulid()
     const goblin: Goblin = { id, trigger, firedAt: Date.now(), status: 'active' }
     this.goblins.set(id, goblin)
@@ -85,7 +94,11 @@ export class MindState {
   }
 
   private maybeReturnToDream(): void {
-    if (this.activeGoblins().length === 0 && this.state === 'goblin') {
+    if (this.activeGoblins().length !== 0) return
+    const next = this.goblinQueue.shift()
+    if (next) {
+      this.activateGoblin(next)
+    } else if (this.state === 'goblin') {
       this.transition('dream', 'all goblins resolved or faded')
     }
   }

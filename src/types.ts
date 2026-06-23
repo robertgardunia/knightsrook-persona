@@ -144,6 +144,7 @@ export type StateEvent =
   | { type: 'state_transition';   from: MindStateLabel; to: MindStateLabel; reason: string; timestamp: number }
   | { type: 'cohesion_drop';      previous: number; current: number; delta: number; externalStimulus: boolean; timestamp: number }
   | { type: 'goblin_fired';       goblinId: string; trigger: string; timestamp: number }
+  | { type: 'goblin_queued';      trigger: string; queueDepth: number; timestamp: number }
   | { type: 'goblin_resolved';    goblinId: string; timestamp: number }
   | { type: 'goblin_faded';       goblinId: string; timestamp: number }
   | { type: 'budget_tick';        used: number; remaining: number; timestamp: number }

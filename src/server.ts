@@ -44,6 +44,10 @@ const app    = express()
 const server = createServer(app)
 const wss    = new WebSocketServer({ server })
 
+let isShuttingDown = false
+process.on('SIGTERM', () => { isShuttingDown = true })
+process.on('SIGINT',  () => { isShuttingDown = true })
+
 app.use(express.static(join(__dirname, '..', 'public')))
 app.use(express.json())
 
@@ -141,7 +145,8 @@ wss.on('connection', (ws: WebSocket) => {
   })
 
   ws.on('close', () => {
-    // Session death — treat as coherence loss event, fire goblins via substrate
+    // Skip on clean server shutdown — the process is going away anyway
+    if (isShuttingDown) return
     const substrate = substrates.get(activePersonaId)
     if (substrate) substrate.sessionInterrupted()
   })
