@@ -391,7 +391,7 @@ async function loadHistory(personaId) {
       const sims = t.retrieval_cohesion_sims
         ? (Array.isArray(t.retrieval_cohesion_sims) ? t.retrieval_cohesion_sims : JSON.parse(t.retrieval_cohesion_sims))
         : []
-      const rBar = buildRetrievalLabel(t.retrieval_cohesion_count, sims, t.retrieval_factual_count)
+      const rBar = buildRetrievalLabel(t.injected_memories ?? [], t.recalled_clusters ?? [])
       footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${t.turn_number}</span>`
       pushChartPoint(sims, t.retrieval_factual_count ?? 0, t.timestamp)
     }
@@ -507,7 +507,7 @@ function addMessage(role, text, cls, telemetry, rawHtml = false) {
     const _d = new Date()
     const ts = `${(_d.getMonth()+1).toString().padStart(2,'0')}/${_d.getDate().toString().padStart(2,'0')}/${_d.getFullYear()} ${_d.getHours().toString().padStart(2,'0')}:${_d.getMinutes().toString().padStart(2,'0')}`
     const r = telemetry.retrieval
-    const rBar = buildRetrievalLabel(r.cohesion.count, r.cohesion.similarities, r.factual.count)
+    const rBar = buildRetrievalLabel(telemetry.injectedMemories ?? [], telemetry.recalledClusters ?? [])
     footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${telemetry.turnNumber}</span>`
   }
   const body = rawHtml ? text : escHtml(text)
@@ -544,20 +544,30 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px'
 })
 
-function buildRetrievalLabel(cohesionCount, cohesionSims, factualCount) {
-  const c = cohesionCount ?? 0
-  const f = factualCount ?? 0
-  const sims = (cohesionSims && cohesionSims.length ? cohesionSims : []).filter(s => s >= SIM_THRESHOLD)
-  const avgSim = sims.length ? sims.reduce((a, b) => a + b, 0) / sims.length : 0
-  const subPct = Math.min(100, Math.round(avgSim * 100))
-  const factPct = Math.min(100 - subPct, f > 0 ? Math.min(f * 10, 30) : 0)
-  const label = c > 0 || f > 0
-    ? `sub:${c}${avgSim ? ' ' + avgSim.toFixed(3) : ''}${f > 0 ? ' fact:' + f : ''}`
-    : 'llm'
+function buildRetrievalLabel(injectedMemories, recalledClusters) {
+  const injected = injectedMemories ?? []
+  const recalled = recalledClusters ?? []
+  const total = injected.length
+  if (total === 0) {
+    return `<span title="no memories injected" style="display:inline-flex;align-items:center;justify-content:center;width:100px">
+      <span style="display:inline-flex;width:100px;height:5px;border-radius:3px;overflow:hidden;background:var(--border)"></span>
+    </span>`
+  }
+  const cited = m => recalled.some(r => {
+    const ml = m.cluster.toLowerCase(), rl = r.toLowerCase()
+    return ml.includes(rl) || rl.includes(ml)
+  })
+  const citedCohesion = injected.filter(m => m.source === 'cohesion' && cited(m)).length
+  const citedFactual  = injected.filter(m => m.source === 'factual'  && cited(m)).length
+  const cohesionPct = Math.round((citedCohesion / total) * 100)
+  const factualPct  = Math.round((citedFactual  / total) * 100)
+  const label = recalled.length > 0
+    ? `cited ${recalled.length}/${total} (${citedCohesion} cohesion, ${citedFactual} factual)`
+    : `0/${total} memories cited`
   return `<span title="${label}" style="display:inline-flex;align-items:center;justify-content:center;width:100px">
     <span style="display:inline-flex;width:100px;height:5px;border-radius:3px;overflow:hidden;background:var(--border)">
-      <span style="width:${subPct}%;background:#4ade80"></span>
-      <span style="width:${factPct}%;background:#60a5fa"></span>
+      <span style="width:${cohesionPct}%;background:#4ade80"></span>
+      <span style="width:${factualPct}%;background:#60a5fa"></span>
     </span>
   </span>`
 }

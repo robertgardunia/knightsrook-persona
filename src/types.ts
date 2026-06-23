@@ -124,6 +124,7 @@ export type TurnTelemetry = {
   storage: StorageTelemetry
   consolidation: ConsolidationTelemetry
   injectedMemories: InjectedMemory[]
+  recalledClusters: string[]
   mcpToolCalls: McpToolCall[]
   mindState: MindSnapshot
 }

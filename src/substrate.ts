@@ -428,6 +428,7 @@ export class Substrate {
       },
       consolidation: consolidationTelemetry,
       injectedMemories,
+      recalledClusters: recalled ?? [],
       mcpToolCalls,
       mindState: this.mind.snapshot(),
     }
