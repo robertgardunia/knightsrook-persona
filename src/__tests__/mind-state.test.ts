@@ -144,12 +144,13 @@ describe('MindState', () => {
       expect(ms.snapshot().state).toBe('dream')
     })
 
-    it('stays in goblin state when multiple goblins and one resolved', () => {
+    it('blocks a second goblin while one is already active', () => {
       const id1 = ms.fireGoblin('first')
-      ms.fireGoblin('second')
-      ms.resolveGoblin(id1)
-      expect(ms.snapshot().state).toBe('goblin')
+      const id2 = ms.fireGoblin('second')
+      expect(id2).toBeNull()
       expect(ms.snapshot().activeGoblins).toHaveLength(1)
+      ms.resolveGoblin(id1!)
+      expect(ms.snapshot().state).toBe('dream')
     })
 
     it('ignores resolveGoblin on already-resolved goblin', () => {
@@ -243,8 +244,7 @@ describe('MindState', () => {
 
     it('clamps to 0 floor', () => {
       ms.recordCohesion(1, true)
-      ms.fireGoblin('g1'); ms.fireGoblin('g2'); ms.fireGoblin('g3')
-      ms.fireGoblin('g4'); ms.fireGoblin('g5')
+      ms.fireGoblin('g1')
       expect(ms.snapshot().equilibrium).toBeGreaterThanOrEqual(0)
     })
 
@@ -264,7 +264,11 @@ describe('MindState', () => {
     })
 
     it('caps event log at 20 entries', () => {
-      for (let i = 0; i < 25; i++) ms.fireGoblin(`goblin ${i}`)
+      // Fire one goblin, resolve it, repeat — each cycle adds events
+      for (let i = 0; i < 25; i++) {
+        const id = ms.fireGoblin(`goblin ${i}`)
+        if (id) ms.resolveGoblin(id)
+      }
       expect(ms.snapshot().recentEvents.length).toBeLessThanOrEqual(20)
     })
   })

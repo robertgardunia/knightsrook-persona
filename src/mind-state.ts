@@ -52,7 +52,8 @@ export class MindState {
 
   // ── Goblins ────────────────────────────────────────────────────────────────
 
-  fireGoblin(trigger: string): string {
+  fireGoblin(trigger: string): string | null {
+    if (this.activeGoblins().length > 0) return null
     const id = ulid()
     const goblin: Goblin = { id, trigger, firedAt: Date.now(), status: 'active' }
     this.goblins.set(id, goblin)
