@@ -35,6 +35,7 @@ type ChainStep = { node: string; why: string; cohesion: number }
 type DreamCycleResult = {
   type: 'dream' | 'goblin'
   thought: string
+  seedNode: string
   coherence: number
   goblinId?: string
   resolved?: boolean
@@ -108,7 +109,7 @@ export class Dreamer {
         score: result.coherence,
         drivers: result.type === 'goblin'
           ? `goblin poke: ${result.thought.slice(0, 60)}`
-          : `dream association: ${result.thought.slice(0, 60)}`,
+          : result.seedNode,
         shifts: result.type === 'goblin' && result.resolved
           ? 'broken edge repaired'
           : result.type === 'goblin'
@@ -215,8 +216,9 @@ export class Dreamer {
     // The full chain is the thought — traversal path preserved
     const thought = chain.map((s, i) => `${i + 1}. ${s.node} — ${s.why}`).join('\n')
     const coherence = Math.round(chain.reduce((s, c) => s + c.cohesion, 0) / chain.length)
+    const seedNode = chain[0].node.slice(0, 60)
 
-    return { type: 'dream', thought, coherence }
+    return { type: 'dream', thought, seedNode, coherence }
   }
 
   private async goblinCycle(goblin: Goblin): Promise<DreamCycleResult | null> {
