@@ -241,7 +241,7 @@ export class Substrate {
     let recallGateFailed = false
     if (injectedClusters.length > 0 && (recalled === null || !validateRecall(recalled, injectedClusters))) {
       const clusterList = injectedClusters.map(c => `  - ${c}`).join('\n')
-      const recallRetry = await this.client.beta.messages.create({
+      const recallRetry = await (this.client.beta.messages.create as any)({
         model: this.model,
         max_tokens: 2048,
         system: systemPrompt,
@@ -257,7 +257,7 @@ export class Substrate {
               'Include a <recall> block citing which clusters you used.',
           },
         ],
-        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }],
         mcp_servers: [{ type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' }],
         betas: ['mcp-client-2025-11-20'],
       })
@@ -303,7 +303,7 @@ export class Substrate {
     // honest absence (cohesion === null) — never a fake neutral score.
     let recovered = false
     if (cohesion === null) {
-      const retry = await this.client.beta.messages.create({
+      const retry = await (this.client.beta.messages.create as any)({
         model: this.model,
         max_tokens: 256,
         system: systemPrompt,
@@ -320,8 +320,8 @@ export class Substrate {
         tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
         mcp_servers: [
           { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
-        ],
-        betas: ['mcp-client-2025-11-20'],
+        ] as any,
+        betas: ['mcp-client-2025-11-20'] as any,
       })
       const retryText = (retry.content as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.text ?? '').join('')
       cohesion = parseCohesion(retryText).cohesion

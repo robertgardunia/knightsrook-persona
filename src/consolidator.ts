@@ -58,6 +58,7 @@ export async function captureTurn(
     tier,
     lastRetrieved: 0,
     retrievalCount: 0,
+    confidence: 0.0,
     createdAt: Date.now(),
   }
 

@@ -1,4 +1,5 @@
 # knightsrook-persona
+<!-- last updated: 2026-06-23 -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

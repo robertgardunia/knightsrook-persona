@@ -261,6 +261,7 @@ export class Dreamer {
       return {
         type: 'goblin',
         thought: parsed.attempt,
+        seedNode: parsed.attempt.slice(0, 60),
         coherence: Number(parsed.confidence) || 4,
         goblinId: goblin.id,
         resolved: parsed.resolved,

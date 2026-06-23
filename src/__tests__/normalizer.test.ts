@@ -16,6 +16,7 @@ function makeMemory(overrides: Partial<ConsolidatedMemory> = {}): ConsolidatedMe
     tier: 'warm',
     lastRetrieved: 0,
     retrievalCount: 0,
+    confidence: 0.0,
     createdAt: Date.now(),
     ...overrides,
   }

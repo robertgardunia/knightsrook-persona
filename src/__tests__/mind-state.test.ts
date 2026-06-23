@@ -128,19 +128,19 @@ describe('MindState', () => {
 
     it('resolveGoblin removes goblin from active list', () => {
       const id = ms.fireGoblin('test trigger')
-      ms.resolveGoblin(id)
+      ms.resolveGoblin(id!)
       expect(ms.snapshot().activeGoblins).toHaveLength(0)
     })
 
     it('fadeGoblin removes goblin from active list', () => {
       const id = ms.fireGoblin('test trigger')
-      ms.fadeGoblin(id)
+      ms.fadeGoblin(id!)
       expect(ms.snapshot().activeGoblins).toHaveLength(0)
     })
 
     it('returns to dream when last goblin is resolved', () => {
       const id = ms.fireGoblin('test')
-      ms.resolveGoblin(id)
+      ms.resolveGoblin(id!)
       expect(ms.snapshot().state).toBe('dream')
     })
 
@@ -160,8 +160,8 @@ describe('MindState', () => {
 
     it('ignores resolveGoblin on already-resolved goblin', () => {
       const id = ms.fireGoblin('test')
-      ms.resolveGoblin(id)
-      ms.resolveGoblin(id) // second call should not throw
+      ms.resolveGoblin(id!)
+      ms.resolveGoblin(id!) // second call should not throw
       expect(ms.snapshot().activeGoblins).toHaveLength(0)
     })
   })
