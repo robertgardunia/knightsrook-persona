@@ -17,6 +17,7 @@ function makeMemory(overrides: Partial<ConsolidatedMemory> = {}): ConsolidatedMe
     lastRetrieved: 0,
     retrievalCount: 0,
     confidence: 0.0,
+    source: 'conversation' as const,
     createdAt: Date.now(),
     ...overrides,
   }

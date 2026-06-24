@@ -91,6 +91,34 @@ export class Storage {
       ALTER TABLE consolidated_memories
         ADD COLUMN IF NOT EXISTS confidence FLOAT NOT NULL DEFAULT 0.0
     `)
+    await this.pg.query(`
+      ALTER TABLE consolidated_memories
+        ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'conversation'
+    `)
+    // Backfill: mark memories as 'internal' if their turns were dream/goblin cycles.
+    // Checks MySQL turns table for source='internal' and syncs to Postgres.
+    try {
+      const [internalTurns] = await this.mysql.query<any[]>(
+        `SELECT id FROM turns WHERE persona_id = ? AND source = 'internal'`,
+        [this.personaId]
+      )
+      if (internalTurns.length > 0) {
+        const ids = internalTurns.map((r: any) => r.id)
+        // Any memory whose turn_ids overlap with internal turn ids gets marked internal
+        await this.pg.query(`
+          UPDATE consolidated_memories
+          SET source = 'internal'
+          WHERE persona_id = $1
+            AND source = 'conversation'
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(turn_ids) t
+              WHERE t = ANY($2::text[])
+            )
+        `, [this.personaId, ids])
+      }
+    } catch (e) {
+      console.warn('[storage] backfill source failed (non-fatal):', e)
+    }
   }
 
   private async addColumnIfMissing(column: string, definition: string, position: string): Promise<void> {
@@ -211,15 +239,16 @@ export class Storage {
       `INSERT INTO consolidated_memories (
         id, persona_id, cluster, turn_ids, summary, embedding, cohesion_peak,
         merged_entities, merged_facts, merged_preferences, merged_decisions,
-        tier, last_retrieved, retrieval_count, confidence, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6::vector,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        tier, last_retrieved, retrieval_count, confidence, source, created_at
+      ) VALUES ($1,$2,$3,$4,$5,$6::vector,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
       ON CONFLICT (id) DO UPDATE SET summary = EXCLUDED.summary`,
       [
         memory.id, this.personaId, memory.cluster,
         JSON.stringify(memory.turnIds), memory.summary, vec, memory.cohesionPeak,
         JSON.stringify(memory.mergedEntities), JSON.stringify(memory.mergedFacts),
         JSON.stringify(memory.mergedPreferences), JSON.stringify(memory.mergedDecisions),
-        memory.tier, memory.lastRetrieved, memory.retrievalCount, memory.confidence ?? 0.0, memory.createdAt,
+        memory.tier, memory.lastRetrieved, memory.retrievalCount, memory.confidence ?? 0.0,
+        memory.source ?? 'conversation', memory.createdAt,
       ]
     )
   }
@@ -379,6 +408,7 @@ export class Storage {
     lastRetrieved: row.last_retrieved,
     retrievalCount: row.retrieval_count,
     confidence: Number(row.confidence ?? 0),
+    source: (row.source ?? 'conversation') as 'conversation' | 'internal',
     createdAt: row.created_at,
   })
 }

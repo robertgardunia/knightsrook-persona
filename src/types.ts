@@ -53,6 +53,7 @@ export type ConsolidatedMemory = {
   lastRetrieved: number
   retrievalCount: number
   confidence: number
+  source: 'conversation' | 'internal'
   createdAt: number
 }
 

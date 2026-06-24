@@ -59,6 +59,7 @@ export async function captureTurn(
     lastRetrieved: 0,
     retrievalCount: 0,
     confidence: 0.0,
+    source: assistantTurn.source === 'internal' ? 'internal' : 'conversation',
     createdAt: Date.now(),
   }
 

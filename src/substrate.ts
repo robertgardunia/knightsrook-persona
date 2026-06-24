@@ -138,7 +138,8 @@ export class Substrate {
 
     const cohesionContext = cohesionMems.map(m => {
       const ts = new Date(m.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
-      return `[${m.cluster}] (formed ${ts}) ${m.summary}`
+      const origin = m.source === 'internal' ? 'your thought' : 'conversation'
+      return `[${m.cluster}] (${origin}, ${ts}) ${m.summary}`
     }).join('\n')
     const factualContext = [
       ...new Set([
