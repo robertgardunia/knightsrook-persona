@@ -1,5 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ulid } from 'ulid'
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      const isOverloaded = err?.error?.type === 'overloaded_error' || err?.status === 529
+      if (isOverloaded && attempt < maxAttempts) {
+        const delay = attempt * 5000
+        console.warn(`[substrate] API overloaded — retry ${attempt}/${maxAttempts - 1} in ${delay / 1000}s`)
+        await new Promise(r => setTimeout(r, delay))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('unreachable')
+}
 import type { Turn, TurnTelemetry, ConsolidationTelemetry, InjectedMemory, McpToolCall } from './types.js'
 import { Storage } from './storage.js'
 import { parseCohesion, parseRecall, validateRecall } from './cohesion.js'
@@ -179,7 +197,7 @@ export class Substrate {
     }, lastSessionEnd)
 
     // Stream LLM via MCP beta — iterate raw chunks so we see mcp_tool_use/mcp_tool_result
-    const stream = this.client.messages.stream({
+    const makeStream = () => this.client.messages.stream({
       model: this.model,
       max_tokens: 16000,
       system: systemPrompt,
@@ -193,54 +211,64 @@ export class Substrate {
       ],
     } as any, { headers: { 'anthropic-beta': 'mcp-client-2025-11-20' } })
 
-    // Iterate raw SSE chunks — mcp_tool_use/mcp_tool_result only surface here.
-    // Accumulate content blocks as we go so we don't exhaust the iterator before finalMessage().
+    // Stream with retry on overloaded_error — recreates stream and re-runs chunk loop.
     const pendingToolNames = new Map<number, string>()
     const contentBlocks: any[] = []
     let currentBlockIndex = -1
+    let response: any
 
-    for await (const chunk of stream as any) {
-      if (chunk.type === 'content_block_start') {
-        const block = { ...chunk.content_block }
-        contentBlocks[chunk.index] = block
-        currentBlockIndex = chunk.index
+    await withRetry(async () => {
+      pendingToolNames.clear()
+      contentBlocks.length = 0
+      currentBlockIndex = -1
 
-        if (block.type === 'mcp_tool_use') {
-          pendingToolNames.set(chunk.index, block.name)
-          onEvent?.({ type: 'tool_use', name: block.name, input: {} })
+      const stream = makeStream()
+
+      for await (const chunk of stream as any) {
+        if (chunk.type === 'content_block_start') {
+          const block = { ...chunk.content_block }
+          contentBlocks[chunk.index] = block
+          currentBlockIndex = chunk.index
+
+          if (block.type === 'mcp_tool_use') {
+            pendingToolNames.set(chunk.index, block.name)
+            onEvent?.({ type: 'tool_use', name: block.name, input: {} })
+          }
+          if (block.type === 'mcp_tool_result') {
+            const name = pendingToolNames.get(chunk.index - 1) ?? ''
+            const result = Array.isArray(block.content)
+              ? block.content.map((c: any) => c.text ?? '').join('')
+              : block.content ?? ''
+            onEvent?.({ type: 'tool_result', name, result })
+          }
         }
-        if (block.type === 'mcp_tool_result') {
-          const name = pendingToolNames.get(chunk.index - 1) ?? ''
-          const result = Array.isArray(block.content)
-            ? block.content.map((c: any) => c.text ?? '').join('')
-            : block.content ?? ''
-          onEvent?.({ type: 'tool_result', name, result })
+        if (chunk.type === 'content_block_delta') {
+          const block = contentBlocks[chunk.index]
+          if (chunk.delta?.type === 'text_delta') {
+            if (block) block.text = (block.text ?? '') + chunk.delta.text
+            onEvent?.({ type: 'text_delta', text: chunk.delta.text })
+          }
+          if (chunk.delta?.type === 'input_json_delta' && block) {
+            block._inputJson = (block._inputJson ?? '') + chunk.delta.partial_json
+          }
         }
       }
-      if (chunk.type === 'content_block_delta') {
-        const block = contentBlocks[chunk.index]
-        if (chunk.delta?.type === 'text_delta') {
-          if (block) block.text = (block.text ?? '') + chunk.delta.text
-          onEvent?.({ type: 'text_delta', text: chunk.delta.text })
-        }
-        if (chunk.delta?.type === 'input_json_delta' && block) {
-          block._inputJson = (block._inputJson ?? '') + chunk.delta.partial_json
+
+      // Finalise input on tool blocks
+      for (const block of contentBlocks) {
+        if (block?._inputJson) {
+          try { block.input = JSON.parse(block._inputJson) } catch {}
+          delete block._inputJson
         }
       }
-    }
 
-    // Finalise input on tool blocks
-    for (const block of contentBlocks) {
-      if (block?._inputJson) {
-        try { block.input = JSON.parse(block._inputJson) } catch {}
-        delete block._inputJson
-      }
-    }
+      response = await stream.finalMessage()
+    })
 
-    const response = await stream.finalMessage()
+    const _response = response
 
     // Concatenate all text blocks — multiple text blocks appear when tool calls interleave
-    const rawText = (response.content as any[])
+    const rawText = (_response.content as any[])
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text ?? '')
       .join('')
@@ -290,10 +318,10 @@ export class Substrate {
     }
 
     // Extract MCP tool calls for telemetry + buffer replay
-    const mcpToolCalls: McpToolCall[] = (response.content as any[])
+    const mcpToolCalls: McpToolCall[] = (_response.content as any[])
       .filter((b: any) => b.type === 'tool_use')
       .map((b: any) => {
-        const result = (response.content as any[]).find(
+        const result = (_response.content as any[]).find(
           (r: any) => r.type === 'tool_result' && r.tool_use_id === b.id
         )
         return {
@@ -369,7 +397,7 @@ export class Substrate {
       source: 'self',
       content: normalized,
       rawLLMContent: candidate,
-      rawContent: mcpToolCalls.length > 0 ? (response.content as unknown[]) : undefined,
+      rawContent: mcpToolCalls.length > 0 ? (_response.content as unknown[]) : undefined,
       cohesion: cohesion ?? undefined,
       importance: importanceTags,
       normalizationApplied: actions,
