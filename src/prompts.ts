@@ -42,6 +42,8 @@ export function buildSystemPrompt(
   // Cohesion requirement goes FIRST so it isn't deprioritized in long contexts
   parts.push(COHESION_REQUIREMENT)
   parts.push('')
+  parts.push(`[CURRENT TIME]\n${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`)
+  parts.push('')
   parts.push('[SUBSTRATE INJECTION]')
   parts.push('')
   parts.push(
