@@ -204,11 +204,7 @@ export class Substrate {
         role: t.role,
         content: (t.rawContent ?? t.content) as any,
       })),
-      tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
-      mcp_servers: [
-        { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
-      ],
-    } as any, { headers: { 'anthropic-beta': 'mcp-client-2025-11-20' } })
+    })
 
     // Stream with retry on overloaded_error — recreates stream and re-runs chunk loop.
     const pendingToolNames = new Map<number, string>()
@@ -297,9 +293,6 @@ export class Substrate {
               'Include a <recall> block citing which clusters you used.',
           },
         ],
-        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }],
-        mcp_servers: [{ type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' }],
-        betas: ['mcp-client-2025-11-20'],
       })
       const retryRaw = (recallRetry.content as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.text ?? '').join('')
       const retryRecall = parseRecall(retryRaw)
@@ -357,11 +350,6 @@ export class Substrate {
               'Reply with ONLY that block (the <cohesion>…</cohesion> JSON) rating that response. Nothing else.',
           },
         ],
-        tools: [{ type: 'mcp_toolset', mcp_server_name: 'knightsrook' }] as any,
-        mcp_servers: [
-          { type: 'url', url: 'https://mcp.knightsrook.com/mcp', name: 'knightsrook' },
-        ] as any,
-        betas: ['mcp-client-2025-11-20'] as any,
       })
       const retryText = (retry.content as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.text ?? '').join('')
       cohesion = parseCohesion(retryText).cohesion

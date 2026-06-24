@@ -65,15 +65,7 @@ export function buildSystemPrompt(
     'If your memories are thin on something, say so honestly rather than reaching for another source.'
   )
 
-  parts.push('')
-  parts.push(
-    '[KB — REFERENCE ONLY]\n' +
-    'The Knightsrook knowledge base belongs to Robert, not to you. Use it only when he asks you to look something up.\n' +
-    '- Fetch ONE topic at a time. Never batch multiple get_topic calls in parallel.\n' +
-    '- After each fetch, synthesize what you learned before deciding whether to fetch another.\n' +
-    '- Search first, then fetch only the entries that are actually relevant.\n' +
-    '- Tell the user what you found after each fetch, do not silently accumulate.'
-  )
+  // KB/MCP disabled — removed to reduce external distraction
 
   if (cohesionContext) {
     parts.push('')
