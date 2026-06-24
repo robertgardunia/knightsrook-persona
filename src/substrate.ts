@@ -136,7 +136,10 @@ export class Substrate {
     ])
     const cohesionMems = await this.storage.retrieveCohesionWeighted(queryEmbedding)
 
-    const cohesionContext = cohesionMems.map(m => `[${m.cluster}] ${m.summary}`).join('\n')
+    const cohesionContext = cohesionMems.map(m => {
+      const ts = new Date(m.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+      return `[${m.cluster}] (formed ${ts}) ${m.summary}`
+    }).join('\n')
     const factualContext = [
       ...new Set([
         ...factualMems.flatMap(m => m.mergedFacts.slice(0, 2)),
