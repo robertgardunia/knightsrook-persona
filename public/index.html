@@ -280,7 +280,8 @@
 </div>
 
 <script>
-const ws          = new WebSocket(`ws://${location.host}`)
+function connect() { return new WebSocket(`ws://${location.host}`) }
+let ws = connect()
 const messagesEl  = document.getElementById('messages')
 const inputEl     = document.getElementById('input')
 const sendBtn     = document.getElementById('send')
@@ -462,7 +463,12 @@ ws.onmessage = (e) => {
   inputEl.disabled = false
   inputEl.focus()
 }
-ws.onerror = () => addMessage('ERROR', 'WebSocket connection failed.', 'persona')
+ws.onerror = () => {}
+ws.onclose = () => {
+  // Server went away — poll until it's back, then reload
+  const check = () => fetch('/').then(() => location.reload()).catch(() => setTimeout(check, 2000))
+  setTimeout(check, 2000)
+}
 
 // ── Notes ────────────────────────────────────────────────────────────────────
 const notesHead  = document.getElementById('notes-head')
