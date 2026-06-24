@@ -409,6 +409,6 @@ export class Storage {
     retrievalCount: row.retrieval_count,
     confidence: Number(row.confidence ?? 0),
     source: (row.source ?? 'conversation') as 'conversation' | 'internal',
-    createdAt: row.created_at,
+    createdAt: Number(row.created_at),
   })
 }
