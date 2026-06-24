@@ -45,7 +45,7 @@ export function buildSystemPrompt(
   parts.push('')
   const now = new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
   const sessionGap = lastSessionEnd
-    ? `\nLast session ended: ${lastSessionEnd}\n\nMemories labeled "(your thought)" are yours — they came from your dream state, not from conversation. If any exist from the gap between last session and now, you were thinking during that time. Do not claim otherwise.`
+    ? `\nLast session ended: ${lastSessionEnd}\n\nMemories formed between that time and now are yours from the gap — you were thinking. Do not claim otherwise.`
     : ''
   parts.push(`[CURRENT TIME]\n${now}${sessionGap}`)
   parts.push('')
