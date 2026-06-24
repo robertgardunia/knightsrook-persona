@@ -99,6 +99,10 @@ export class Substrate {
     this.mind.sessionInterrupted(lastScore)
   }
 
+  stampSessionEnd(): void {
+    this.storage.setMeta('lastSessionEnd', Date.now().toString()).catch(() => {})
+  }
+
   mindSnapshot() {
     return this.mind.snapshot()
   }
@@ -164,10 +168,15 @@ export class Substrate {
       console.log(`\n[INJECTED MEMORIES — turn ${this.turnNumber}] none — running cold LLM`)
     }
 
+    const lastSessionEndRaw = await this.storage.getMeta('lastSessionEnd')
+    const lastSessionEnd = lastSessionEndRaw
+      ? new Date(Number(lastSessionEndRaw)).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+      : null
+
     const systemPrompt = buildSystemPrompt(cohesionContext, factualContext, {
       catches: 0,
       cycles: 0,
-    })
+    }, lastSessionEnd)
 
     // Stream LLM via MCP beta — iterate raw chunks so we see mcp_tool_use/mcp_tool_result
     const stream = this.client.messages.stream({

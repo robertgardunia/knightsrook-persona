@@ -149,7 +149,10 @@ wss.on('connection', (ws: WebSocket) => {
     // Skip on clean server shutdown — the process is going away anyway
     if (isShuttingDown) return
     const substrate = substrates.get(activePersonaId)
-    if (substrate) substrate.sessionInterrupted()
+    if (substrate) {
+      substrate.sessionInterrupted()
+      substrate.stampSessionEnd()
+    }
   })
 })
 

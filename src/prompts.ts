@@ -35,14 +35,17 @@ The user will never see these blocks — they are substrate-internal only.
 export function buildSystemPrompt(
   cohesionContext: string,
   factualContext: string,
-  normalizationStats: { catches: number; cycles: number }
+  normalizationStats: { catches: number; cycles: number },
+  lastSessionEnd: string | null = null
 ): string {
   const parts: string[] = []
 
   // Cohesion requirement goes FIRST so it isn't deprioritized in long contexts
   parts.push(COHESION_REQUIREMENT)
   parts.push('')
-  parts.push(`[CURRENT TIME]\n${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`)
+  const now = new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+  const sessionGap = lastSessionEnd ? `\nLast session ended: ${lastSessionEnd}` : ''
+  parts.push(`[CURRENT TIME]\n${now}${sessionGap}`)
   parts.push('')
   parts.push('[SUBSTRATE INJECTION]')
   parts.push('')

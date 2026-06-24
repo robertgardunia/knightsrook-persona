@@ -88,6 +88,14 @@ export class Storage {
 
   private async migratePostgres(): Promise<void> {
     await this.pg.query(`
+      CREATE TABLE IF NOT EXISTS persona_meta (
+        persona_id VARCHAR(64) NOT NULL,
+        key        VARCHAR(64) NOT NULL,
+        value      TEXT NOT NULL,
+        PRIMARY KEY (persona_id, key)
+      )
+    `)
+    await this.pg.query(`
       ALTER TABLE consolidated_memories
         ADD COLUMN IF NOT EXISTS confidence FLOAT NOT NULL DEFAULT 0.0
     `)
@@ -373,6 +381,22 @@ export class Storage {
        SET confidence = GREATEST(0.0, LEAST(1.0, confidence + $1 - $2))
        WHERE id = $3`,
       [delta, DECAY, id]
+    )
+  }
+
+  async getMeta(key: string): Promise<string | null> {
+    const result = await this.pg.query(
+      `SELECT value FROM persona_meta WHERE persona_id = $1 AND key = $2`,
+      [this.personaId, key]
+    )
+    return result.rows[0]?.value ?? null
+  }
+
+  async setMeta(key: string, value: string): Promise<void> {
+    await this.pg.query(
+      `INSERT INTO persona_meta (persona_id, key, value) VALUES ($1, $2, $3)
+       ON CONFLICT (persona_id, key) DO UPDATE SET value = EXCLUDED.value`,
+      [this.personaId, key, value]
     )
   }
 
