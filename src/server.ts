@@ -125,6 +125,12 @@ wss.on('connection', (ws: WebSocket) => {
   // Send the resolved persona name so the UI can pre-fill it
   ws.send(JSON.stringify({ type: 'init', personaId: defaultPersonaId }))
 
+  // Push current mind state immediately so the UI is never stale on connect
+  const existing = substrates.get(defaultPersonaId)
+  if (existing) {
+    ws.send(JSON.stringify({ type: 'dream_event', personaId: defaultPersonaId, event: { mindState: existing.mindSnapshot(), result: null } }))
+  }
+
   let activePersonaId = defaultPersonaId
 
   ws.on('message', async (raw) => {

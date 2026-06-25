@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-25 — pushback dots, turn number removed, bar moved right -->
+<!-- last updated: 2026-06-25 — pushback dots, turn number removed, bar moved right, mind state pushed on WS connect -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 
