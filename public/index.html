@@ -199,7 +199,8 @@
     display: flex; justify-content: space-between; align-items: center; gap: 10px;
     margin-bottom: 8px; padding: 6px 0; border-bottom: 1px solid var(--border);
   }
-  .msg-header .footer-left, .msg-header .footer-turn { font-size: 10px; color: var(--muted); }
+  .msg-header .footer-left { font-size: 10px; color: var(--muted); }
+  .msg-header .footer-right { display: inline-flex; align-items: center; gap: 6px; }
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -393,7 +394,8 @@ async function loadHistory(personaId) {
         ? (Array.isArray(t.retrieval_cohesion_sims) ? t.retrieval_cohesion_sims : JSON.parse(t.retrieval_cohesion_sims))
         : []
       const rBar = buildRetrievalLabel(t.injected_memories ?? [], t.recalled_clusters ?? [])
-      footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${t.turn_number}</span>`
+      const pushbackDots = buildPushbackDots(t.pushbacks ?? [])
+      footer = `<span class="footer-left">PERSONA · ${ts}</span><span class="footer-right">${pushbackDots}${rBar}</span>`
       pushChartPoint(sims, t.retrieval_factual_count ?? 0, t.timestamp)
     }
     el.innerHTML = `<div class="msg-header">${footer}</div>${escHtml(t.content)}`
@@ -512,9 +514,9 @@ function addMessage(role, text, cls, telemetry, rawHtml = false) {
   if (telemetry && cls === 'persona') {
     const _d = new Date()
     const ts = `${(_d.getMonth()+1).toString().padStart(2,'0')}/${_d.getDate().toString().padStart(2,'0')}/${_d.getFullYear()} ${_d.getHours().toString().padStart(2,'0')}:${_d.getMinutes().toString().padStart(2,'0')}`
-    const r = telemetry.retrieval
     const rBar = buildRetrievalLabel(telemetry.injectedMemories ?? [], telemetry.recalledClusters ?? [])
-    footer = `<span class="footer-left">PERSONA · ${ts}</span>${rBar}<span class="footer-turn">turn #${telemetry.turnNumber}</span>`
+    const pushbackDots = buildPushbackDots(telemetry.pushbacks ?? [])
+    footer = `<span class="footer-left">PERSONA · ${ts}</span><span class="footer-right">${pushbackDots}${rBar}</span>`
   }
   const body = rawHtml ? text : escHtml(text)
   el.innerHTML = `<div class="msg-header">${footer}</div>${body}`
@@ -549,6 +551,16 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = 'auto'
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px'
 })
+
+function buildPushbackDots(pushbacks) {
+  if (!pushbacks || pushbacks.length === 0) return ''
+  const colors = { recall_gate: '#4ade80', cohesion_reprompt: '#fb923c' }
+  const labels = { recall_gate: 'Recall gate', cohesion_reprompt: 'Cohesion re-prompt' }
+  const dots = pushbacks.map(p =>
+    `<span title="${labels[p.type]}: ${p.reason}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${colors[p.type] ?? '#888'};margin-right:3px;cursor:default"></span>`
+  ).join('')
+  return `<span style="display:inline-flex;align-items:center;margin-right:6px">${dots}</span>`
+}
 
 function buildRetrievalLabel(injectedMemories, recalledClusters) {
   const injected = injectedMemories ?? []

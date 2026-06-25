@@ -126,8 +126,14 @@ export type TurnTelemetry = {
   consolidation: ConsolidationTelemetry
   injectedMemories: InjectedMemory[]
   recalledClusters: string[]
+  pushbacks: PushbackEvent[]
   mcpToolCalls: McpToolCall[]
   mindState: MindSnapshot
+}
+
+export type PushbackEvent = {
+  type: 'recall_gate' | 'cohesion_reprompt'
+  reason: string
 }
 
 // ── Mind State ────────────────────────────────────────────────────────────────

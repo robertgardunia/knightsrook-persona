@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-24 — added overloaded_error retry, auto-reload UI on restart -->
+<!-- last updated: 2026-06-25 — pushback dots, turn number removed, bar moved right -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

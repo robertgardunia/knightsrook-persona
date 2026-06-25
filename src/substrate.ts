@@ -275,7 +275,10 @@ export class Substrate {
     // was actually injected, push back once listing exactly what was available.
     const injectedClusters = injectedMemories.map(m => m.cluster)
     let recallGateFailed = false
+    const pushbacks: import('./types.js').PushbackEvent[] = []
     if (injectedClusters.length > 0 && (recalled === null || !validateRecall(recalled, injectedClusters))) {
+      const reason = recalled === null ? 'no <recall> block in response' : `cited clusters did not match injected: ${recalled.join(', ')}`
+      pushbacks.push({ type: 'recall_gate', reason })
       const clusterList = injectedClusters.map(c => `  - ${c}`).join('\n')
       const recallRetry = await (this.client.beta.messages.create as any)({
         model: this.model,
@@ -336,6 +339,7 @@ export class Substrate {
     // honest absence (cohesion === null) — never a fake neutral score.
     let recovered = false
     if (cohesion === null) {
+      pushbacks.push({ type: 'cohesion_reprompt', reason: 'response did not include required <cohesion> block' })
       const retry = await (this.client.beta.messages.create as any)({
         model: this.model,
         max_tokens: 256,
@@ -457,6 +461,7 @@ export class Substrate {
       consolidation: consolidationTelemetry,
       injectedMemories,
       recalledClusters: recalled ?? [],
+      pushbacks,
       mcpToolCalls,
       mindState: this.mind.snapshot(),
     }
