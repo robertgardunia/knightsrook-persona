@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-26 — goblins reworked: proactive gap-finding on zero-confidence memories, unresolved goblins surface in retrieval; coherence-drop firing disabled; confidence stats in UI -->
+<!-- last updated: 2026-06-26 — goblins reworked; confidence initialized from cohesion_peak at memory creation; backfill on startup -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

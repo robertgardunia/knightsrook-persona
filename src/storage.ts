@@ -99,6 +99,12 @@ export class Storage {
       ALTER TABLE consolidated_memories
         ADD COLUMN IF NOT EXISTS confidence FLOAT NOT NULL DEFAULT 0.0
     `)
+    // Backfill confidence from cohesion_peak for memories still at default 0.0
+    await this.pg.query(`
+      UPDATE consolidated_memories
+        SET confidence = ROUND((cohesion_peak / 10.0)::numeric, 2)
+        WHERE persona_id = $1 AND confidence = 0.0 AND cohesion_peak > 0
+    `, [this.personaId])
     await this.pg.query(`
       ALTER TABLE consolidated_memories
         ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'conversation'
