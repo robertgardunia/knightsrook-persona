@@ -188,16 +188,17 @@ export class Dreamer {
           : ''
 
       const prompt =
-        `You are following an association chain. Current node:\n` +
-        `[${current.cluster}] ${current.summary}\n\n` +
+        `You are integrating memories. Work only with what is written below — do not introduce facts, people, events, or concepts not present in these nodes.\n\n` +
+        `Current node:\n[${current.cluster}] ${current.summary}\n\n` +
         `Nearby nodes:\n${neighbourText}\n\n` +
         `${settledHint}\n\n` +
         `Either:\n` +
-        `- Move to one of the nearby nodes if you see a genuine connection (name it specifically)\n` +
-        `- Stay here and articulate something about this node that wasn't captured yet\n` +
+        `- Move to one of the nearby nodes if you see a genuine connection between them (name the specific node)\n` +
+        `- Stay here and articulate something implicit in this node that isn't stated directly\n` +
         `- Let the chain end here if it feels complete\n\n` +
+        `Constraint: your "node" and "why" must be grounded in the text above. Do not add external knowledge.\n\n` +
         `Reply with JSON only:\n` +
-        `{"node":"<what you're focusing on now>","why":"<what connection or insight>","cohesion":<1-10>,"continue":<true|false>}`
+        `{"node":"<what you're focusing on now>","why":"<what connection or insight, grounded in the memory text>","cohesion":<1-10>,"continue":<true|false>}`
 
       const raw = await cognize(prompt, { temperature: 0.75, maxTokens: 250 })
 
@@ -254,9 +255,10 @@ export class Dreamer {
     }
 
     const prompt =
-      `A broken connection was flagged in memory: "${goblin.trigger}"\n\n` +
-      `Attempt to reason about what's missing or what would repair this. ` +
-      `Be honest — if you cannot resolve it, say so.\n\n` +
+      `A gap or broken connection was flagged in memory: "${goblin.trigger}"\n\n` +
+      `Reason about what is missing or unresolved using only what the memory text implies. ` +
+      `Do not introduce facts, people, or events from outside the memory. ` +
+      `If you cannot resolve it from what is already there, say so — an honest "unresolved" is correct output.\n\n` +
       `Reply with JSON only, no other text:\n` +
       `{"attempt":"...","confidence":<integer 1-10>,"resolved":<true or false>}`
 

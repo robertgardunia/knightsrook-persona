@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-26 — goblins reworked; confidence initialized from cohesion_peak at memory creation; backfill on startup -->
+<!-- last updated: 2026-06-26 — goblins reworked; confidence from cohesion_peak; dream/goblin prompts constrained to memory-only, no external injection -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 
