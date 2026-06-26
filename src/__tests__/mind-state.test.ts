@@ -72,25 +72,18 @@ describe('MindState', () => {
       expect(ms.snapshot().activeGoblins).toHaveLength(0)
     })
 
-    it('fires goblin on sharp drop without external stimulus', () => {
-      ms.recordCohesion(8, true)
-      ms.recordCohesion(8, true)
-      ms.recordCohesion(3, false) // 5 below avg — sharp drop, no external cause
-      expect(ms.snapshot().activeGoblins).toHaveLength(1)
-    })
-
-    it('fires goblin on sharp drop even with external stimulus', () => {
-      ms.recordCohesion(8, true)
-      ms.recordCohesion(8, true)
-      ms.recordCohesion(3, true) // sharp drop during conversation still fires goblin
-      expect(ms.snapshot().activeGoblins).toHaveLength(1)
-    })
-
-    it('transitions to refractory on sharp drop without external stimulus', () => {
+    it('does not fire goblin on sharp drop (cohesion-drop trigger disabled)', () => {
       ms.recordCohesion(8, true)
       ms.recordCohesion(8, true)
       ms.recordCohesion(3, false)
-      expect(ms.snapshot().state).toBe('refractory')
+      expect(ms.snapshot().activeGoblins).toHaveLength(0)
+    })
+
+    it('does not transition to refractory on sharp drop (cohesion-drop trigger disabled)', () => {
+      ms.recordCohesion(8, true)
+      ms.recordCohesion(8, true)
+      ms.recordCohesion(3, false)
+      expect(ms.snapshot().state).not.toBe('refractory')
     })
 
     it('does not force refractory on sharp drop with external stimulus', () => {

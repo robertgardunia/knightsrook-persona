@@ -128,6 +128,7 @@ export class Substrate {
   // Dream loop interface — called by Dreamer, not by conversation turns
   tickDreamBudget(tokens: number): void { this.mind.tickBudget(tokens) }
   recordDreamCohesion(score: number): void { this.mind.recordCohesion(score, false) }
+  fireGoblin(trigger: string): string | null { return this.mind.fireGoblin(trigger) }
   resolveGoblin(id: string): void { this.mind.resolveGoblin(id) }
   fadeGoblin(id: string): void { this.mind.fadeGoblin(id) }
   getStorage(): Storage { return this.storage }
@@ -158,10 +159,16 @@ export class Substrate {
     ])
     const cohesionMems = await this.storage.retrieveCohesionWeighted(queryEmbedding)
 
+    // Surface active (unresolved) goblins as open questions she should bring up
+    const activeGoblins = this.mind.snapshot().activeGoblins.filter(g => g.status === 'active')
+    const goblinContext = activeGoblins.length > 0
+      ? '\n[OPEN QUESTIONS — unresolved, worth raising]\n' + activeGoblins.map(g => `- ${g.trigger}`).join('\n')
+      : ''
+
     const cohesionContext = cohesionMems.map(m => {
       const ts = new Date(m.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
       return `[${m.cluster}] (${ts}) ${m.summary}`
-    }).join('\n')
+    }).join('\n') + goblinContext
     const factualContext = [
       ...new Set([
         ...factualMems.flatMap(m => m.mergedFacts.slice(0, 2)),

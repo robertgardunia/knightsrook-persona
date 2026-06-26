@@ -29,18 +29,10 @@ export class MindState {
   recordCohesion(score: number, externalStimulus: boolean): void {
     const avg = this.trajectoryAvg()
 
-    // Suppress drop-detection while a goblin or refractory is already active — goblins must not spawn goblins.
-    if (avg !== null && (avg - score) >= SHARP_DROP_THRESHOLD && this.state !== 'goblin' && this.state !== 'refractory') {
+    // Coherence drop detection disabled — goblins now fire proactively on unexplored
+    // memory gaps rather than reactively on drift. May re-enable later.
+    if (avg !== null && (avg - score) >= SHARP_DROP_THRESHOLD) {
       this.emit({ type: 'cohesion_drop', previous: avg, current: score, delta: score - avg, externalStimulus, timestamp: Date.now() })
-
-      if (!externalStimulus) {
-        // Self-induced drift: veto + refractory
-        this.transition('refractory', 'sharp coherence drop with no external stimulus')
-        this.fireGoblin(`coherence dropped ${(avg - score).toFixed(1)} points without external cause (self-induced drift)`)
-      } else {
-        // Conversation-context drop: goblin but no forced refractory
-        this.fireGoblin(`coherence dropped ${(avg - score).toFixed(1)} points during conversation`)
-      }
     }
 
     this.trajectory.push(score)

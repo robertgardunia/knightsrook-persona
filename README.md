@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-25 — pushback dots, turn number removed, bar moved right, mind state pushed on WS connect -->
+<!-- last updated: 2026-06-26 — goblins reworked: proactive gap-finding on zero-confidence memories, unresolved goblins surface in retrieval; coherence-drop firing disabled; confidence stats in UI -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

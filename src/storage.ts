@@ -384,6 +384,30 @@ export class Storage {
     )
   }
 
+  // Returns memories that have never been visited by the dream chain (confidence=0,
+  // retrieval_count=0), randomly ordered so each call surfaces different gaps.
+  async confidenceStats(): Promise<{ avg: number; explored: number; total: number }> {
+    const { rows } = await this.pg.query(
+      `SELECT ROUND(AVG(confidence)::numeric, 4) as avg,
+              SUM(CASE WHEN confidence > 0 THEN 1 ELSE 0 END) as explored,
+              COUNT(*) as total
+       FROM consolidated_memories WHERE persona_id = $1`,
+      [this.personaId]
+    )
+    const r = rows[0]
+    return { avg: Number(r.avg ?? 0), explored: Number(r.explored ?? 0), total: Number(r.total ?? 0) }
+  }
+
+  async retrieveUnexplored(limit = 3): Promise<ConsolidatedMemory[]> {
+    const { rows } = await this.pg.query(
+      `SELECT * FROM consolidated_memories
+       WHERE persona_id = $1 AND confidence = 0 AND retrieval_count = 0 AND embedding IS NOT NULL
+       ORDER BY RANDOM() LIMIT $2`,
+      [this.personaId, limit]
+    )
+    return rows.map((r: any) => this.rowToMemory(r))
+  }
+
   async getMeta(key: string): Promise<string | null> {
     const result = await this.pg.query(
       `SELECT value FROM persona_meta WHERE persona_id = $1 AND key = $2`,

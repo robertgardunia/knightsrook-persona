@@ -18,9 +18,10 @@ import type { Substrate } from './substrate.js'
 import type { Storage } from './storage.js'
 import type { Goblin } from './types.js'
 
-const DREAM_INTERVAL_MS   = Number(process.env.DREAM_INTERVAL_MS  ?? 45_000)
-const GOBLIN_MAX_ATTEMPTS = Number(process.env.GOBLIN_MAX_ATTEMPTS ?? 3)
-const CHAIN_MAX_STEPS     = 4   // max hops per dream chain
+const DREAM_INTERVAL_MS      = Number(process.env.DREAM_INTERVAL_MS  ?? 45_000)
+const GOBLIN_MAX_ATTEMPTS    = Number(process.env.GOBLIN_MAX_ATTEMPTS ?? 3)
+const CHAIN_MAX_STEPS        = 4    // max hops per dream chain
+const PROACTIVE_GOBLIN_EVERY = 20   // every N dream cycles, scan for unexplored memories
 
 // Gemma wraps JSON in ```json fences — strip them before parsing.
 function extractJson(raw: string): string {
@@ -45,6 +46,7 @@ export type DreamEvent = {
   type: 'dream_cycle'
   result: DreamCycleResult
   mindState: ReturnType<Substrate['mindSnapshot']>
+  confidenceStats: { avg: number; explored: number; total: number }
   timestamp: number
 }
 
@@ -52,6 +54,7 @@ export class Dreamer {
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private goblinAttempts = new Map<string, number>()
+  private dreamCycleCount = 0
 
   constructor(
     private substrate: Substrate,
@@ -92,6 +95,16 @@ export class Dreamer {
     if (snap.state === 'goblin' && snap.activeGoblins.length > 0) {
       result = await this.goblinCycle(snap.activeGoblins[0])
     } else {
+      // Every N dream cycles, proactively scan for unexplored memories and spawn a goblin
+      this.dreamCycleCount++
+      if (this.dreamCycleCount % PROACTIVE_GOBLIN_EVERY === 0) {
+        const unexplored = await this.storage.retrieveUnexplored(1)
+        if (unexplored.length > 0) {
+          const mem = unexplored[0]
+          const id = this.substrate.fireGoblin(`unexplored memory: [${mem.cluster}] ${mem.summary.slice(0, 80)}`)
+          if (id) console.log(`[dreamer] proactive goblin fired for unexplored: ${mem.cluster.slice(0, 60)}`)
+        }
+      }
       result = await this.dreamCycle()
     }
 
@@ -142,7 +155,8 @@ export class Dreamer {
     await captureTurn(stub, internalTurn, this.storage)
 
     const mindState = this.substrate.mindSnapshot()
-    this.onEvent?.({ type: 'dream_cycle', result, mindState, timestamp: Date.now() })
+    const confidenceStats = await this.storage.confidenceStats()
+    this.onEvent?.({ type: 'dream_cycle', result, mindState, confidenceStats, timestamp: Date.now() })
 
     console.log(`[dreamer] ${result.type} cycle — coherence ${result.coherence}/10 — ${result.thought.slice(0, 80)}`)
   }
