@@ -120,14 +120,10 @@ export class Dreamer {
       content: result.thought,
       cohesion: {
         score: result.coherence,
-        drivers: result.type === 'goblin'
-          ? `goblin poke: ${result.thought.slice(0, 60)}`
-          : result.seedNode,
-        shifts: result.type === 'goblin' && result.resolved
-          ? 'broken edge repaired'
-          : result.type === 'goblin'
-            ? 'broken edge unresolved'
-            : 'new association formed',
+        drivers: result.thought,
+        shifts: result.type === 'goblin'
+          ? (result.resolved ? 'broken edge repaired' : 'broken edge unresolved')
+          : '',
       },
       tokens: Math.ceil(result.thought.length / 4),
       timestamp: Date.now(),

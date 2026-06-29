@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-28 — dream chain fixed: insight-based output replaces label-echoing; internal corpus purged; budget raised to 250k -->
+<!-- last updated: 2026-06-29 — dream summaries now use full thought text, not truncated seed node -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 
