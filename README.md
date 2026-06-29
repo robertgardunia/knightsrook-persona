@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-26 — goblins reworked; confidence from cohesion_peak; dream/goblin prompts constrained to memory-only, no external injection -->
+<!-- last updated: 2026-06-28 — dream chain fixed: insight-based output replaces label-echoing; internal corpus purged; budget raised to 250k -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

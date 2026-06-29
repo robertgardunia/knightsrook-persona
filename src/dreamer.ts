@@ -188,26 +188,23 @@ export class Dreamer {
           : ''
 
       const prompt =
-        `You are integrating memories. Work only with what is written below — do not introduce facts, people, events, or concepts not present in these nodes.\n\n` +
-        `Current node:\n[${current.cluster}] ${current.summary}\n\n` +
-        `Nearby nodes:\n${neighbourText}\n\n` +
+        `You are integrating memories. Work only with what is written below — do not introduce facts, people, events, or concepts not present in these memories.\n\n` +
+        `Current memory:\n${current.summary}\n\n` +
+        `Related memories:\n${neighbourText}\n\n` +
         `${settledHint}\n\n` +
-        `Either:\n` +
-        `- Move to one of the nearby nodes if you see a genuine connection between them (name the specific node)\n` +
-        `- Stay here and articulate something implicit in this node that isn't stated directly\n` +
-        `- Let the chain end here if it feels complete\n\n` +
-        `Constraint: your "node" and "why" must be grounded in the text above. Do not add external knowledge.\n\n` +
+        `Write a single sentence of genuine associative reasoning — what do you notice, what connects, what feels unresolved or newly clear? ` +
+        `Ground it entirely in the memory text above. Do not restate the memory labels.\n\n` +
         `Reply with JSON only:\n` +
-        `{"node":"<what you're focusing on now>","why":"<what connection or insight, grounded in the memory text>","cohesion":<1-10>,"continue":<true|false>}`
+        `{"insight":"<one sentence of genuine reasoning, in your own words>","next":<1-4 or null to end chain>,"cohesion":<1-10>,"continue":<true|false>}`
 
       const raw = await cognize(prompt, { temperature: 0.75, maxTokens: 250 })
 
       try {
         const parsed = JSON.parse(extractJson(raw)) as {
-          node: string; why: string; cohesion: number; continue: boolean
+          insight: string; next: number | null; cohesion: number; continue: boolean
         }
         const stepCohesion = Number(parsed.cohesion) || 5
-        chain.push({ node: parsed.node, why: parsed.why, cohesion: stepCohesion })
+        chain.push({ node: parsed.insight, why: '', cohesion: stepCohesion })
 
         // Update confidence of the node we just stepped from.
         // High cohesion = well-integrated (+), low cohesion = shaky (-).
@@ -216,13 +213,12 @@ export class Dreamer {
 
         if (!parsed.continue) break
 
-        // Move to the most relevant neighbour by re-embedding the current thought
+        // Move to the neighbour Gemma selected, or the closest one
         if (neighbours.length > 0) {
-          currentEmbedding = await embedText(parsed.node + ' ' + parsed.why)
-          // Pick the neighbour closest to where Gemma said it was going
-          const closest = neighbours[0]
-          visitedIds.push(closest.id)
-          current = closest
+          const nextIdx = parsed.next != null ? Math.min(parsed.next - 1, neighbours.length - 1) : 0
+          current = neighbours[nextIdx]
+          visitedIds.push(current.id)
+          currentEmbedding = await embedText(parsed.insight)
         } else {
           break
         }
@@ -235,7 +231,7 @@ export class Dreamer {
     if (chain.length === 0) return null
 
     // The full chain is the thought — traversal path preserved
-    const thought = chain.map((s, i) => `${i + 1}. ${s.node} — ${s.why}`).join('\n')
+    const thought = chain.map(s => s.node).filter(Boolean).join(' → ')
     const coherence = Math.round(chain.reduce((s, c) => s + c.cohesion, 0) / chain.length)
     const seedNode = chain[0].node.slice(0, 60)
 

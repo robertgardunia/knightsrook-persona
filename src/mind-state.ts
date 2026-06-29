@@ -3,7 +3,7 @@ import type { MindStateLabel, Goblin, StateEvent, MindSnapshot } from './types.j
 
 const TRAJECTORY_WINDOW = 5    // rolling cohesion scores to keep
 const SHARP_DROP_THRESHOLD = 2 // points below rolling average = sharp drop
-const IDEA_BUDGET_LIMIT = 100_000
+const IDEA_BUDGET_LIMIT = 250_000
 const MAX_RECENT_EVENTS = 20
 
 export class MindState {
