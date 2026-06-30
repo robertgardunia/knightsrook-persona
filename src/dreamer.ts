@@ -47,6 +47,7 @@ export type DreamEvent = {
   result: DreamCycleResult
   mindState: ReturnType<Substrate['mindSnapshot']>
   confidenceStats: { avg: number; explored: number; total: number }
+  edgeStats: { total: number; orphans: number; maxUse: number; avgWeight: number }
   timestamp: number
 }
 
@@ -98,11 +99,14 @@ export class Dreamer {
       // Every N dream cycles, proactively scan for unexplored memories and spawn a goblin
       this.dreamCycleCount++
       if (this.dreamCycleCount % PROACTIVE_GOBLIN_EVERY === 0) {
-        const unexplored = await this.storage.retrieveUnexplored(1)
-        if (unexplored.length > 0) {
-          const mem = unexplored[0]
-          const id = this.substrate.fireGoblin(`unexplored memory: [${mem.cluster}] ${mem.summary.slice(0, 80)}`)
-          if (id) console.log(`[dreamer] proactive goblin fired for unexplored: ${mem.cluster.slice(0, 60)}`)
+        // Prefer true orphans (no edges) — these are the real gaps in the graph
+        const orphans = await this.storage.retrieveOrphans(1)
+        const targets = orphans.length > 0 ? orphans : await this.storage.retrieveUnexplored(1)
+        if (targets.length > 0) {
+          const mem = targets[0]
+          const label = orphans.length > 0 ? 'orphan node' : 'unexplored memory'
+          const id = this.substrate.fireGoblin(`${label}: [${mem.cluster}] ${mem.summary.slice(0, 80)}`)
+          if (id) console.log(`[dreamer] proactive goblin fired for ${label}: ${mem.cluster.slice(0, 60)}`)
         }
       }
       result = await this.dreamCycle()
@@ -151,8 +155,11 @@ export class Dreamer {
     await captureTurn(stub, internalTurn, this.storage)
 
     const mindState = this.substrate.mindSnapshot()
-    const confidenceStats = await this.storage.confidenceStats()
-    this.onEvent?.({ type: 'dream_cycle', result, mindState, confidenceStats, timestamp: Date.now() })
+    const [confidenceStats, edgeStats] = await Promise.all([
+      this.storage.confidenceStats(),
+      this.storage.edgeStats(),
+    ])
+    this.onEvent?.({ type: 'dream_cycle', result, mindState, confidenceStats, edgeStats, timestamp: Date.now() })
 
     console.log(`[dreamer] ${result.type} cycle — coherence ${result.coherence}/10 — ${result.thought.slice(0, 80)}`)
   }
@@ -171,8 +178,20 @@ export class Dreamer {
     let currentEmbedding = await embedText(current.summary)
 
     for (let step = 0; step < CHAIN_MAX_STEPS; step++) {
-      // Find nearest neighbours to current node, excluding already visited
-      const neighbours = await this.storage.retrieveNearestTo(currentEmbedding, visitedIds, 4)
+      // Edge-first traversal: check stored edges before falling back to vector search.
+      // This re-uses proven paths and penalizes gravity wells via use_count scoring.
+      let neighbours = await this.storage.getAdjacentByEdge(current.id, visitedIds, 4)
+      let traversalSource: 'edge' | 'vector' = 'edge'
+      if (neighbours.length < 2) {
+        // Not enough stored edges — fall back to vector similarity
+        const vectorNeighbours = await this.storage.retrieveNearestTo(currentEmbedding, visitedIds, 4)
+        const edgeIds = new Set(neighbours.map(n => n.id))
+        for (const n of vectorNeighbours) {
+          if (!edgeIds.has(n.id)) neighbours.push(n)
+        }
+        neighbours = neighbours.slice(0, 4)
+        traversalSource = 'vector'
+      }
       const neighbourText = neighbours.map((m, i) =>
         `${i + 1}. [${m.cluster}] ${m.summary}`
       ).join('\n')
@@ -209,12 +228,15 @@ export class Dreamer {
 
         if (!parsed.continue) break
 
-        // Move to the neighbour Gemma selected, or the closest one
+        // Move to the neighbour Gemma selected, or the closest one, and record the edge
         if (neighbours.length > 0) {
           const nextIdx = parsed.next != null ? Math.min(parsed.next - 1, neighbours.length - 1) : 0
+          const prev = current
           current = neighbours[nextIdx]
           visitedIds.push(current.id)
           currentEmbedding = await embedText(parsed.insight)
+          // Record traversal as a weighted edge — this is how the graph builds up over time
+          await this.storage.upsertEdge(prev.id, current.id, stepCohesion, 'dream')
         } else {
           break
         }

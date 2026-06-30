@@ -109,6 +109,26 @@ export class Storage {
       ALTER TABLE consolidated_memories
         ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'conversation'
     `)
+    await this.pg.query(`
+      CREATE TABLE IF NOT EXISTS memory_edges (
+        id         VARCHAR(26) PRIMARY KEY,
+        persona_id VARCHAR(64) NOT NULL,
+        from_id    VARCHAR(26) NOT NULL,
+        to_id      VARCHAR(26) NOT NULL,
+        weight     FLOAT NOT NULL DEFAULT 0.5,
+        source     VARCHAR(16) NOT NULL DEFAULT 'dream',
+        use_count  INT NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        last_used  BIGINT,
+        UNIQUE (persona_id, from_id, to_id)
+      )
+    `)
+    await this.pg.query(`
+      CREATE INDEX IF NOT EXISTS memory_edges_from ON memory_edges (persona_id, from_id)
+    `)
+    await this.pg.query(`
+      CREATE INDEX IF NOT EXISTS memory_edges_to ON memory_edges (persona_id, to_id)
+    `)
     // Backfill: mark memories as 'internal' if their turns were dream/goblin cycles.
     // Checks MySQL turns table for source='internal' and syncs to Postgres.
     try {
@@ -412,6 +432,90 @@ export class Storage {
       [this.personaId, limit]
     )
     return rows.map((r: any) => this.rowToMemory(r))
+  }
+
+  // ── Edge layer ────────────────────────────────────────────────────────────────
+
+  // Record a traversal between two nodes. If the edge already exists, update
+  // weight (moving average toward new cohesion signal) and increment use_count.
+  async upsertEdge(fromId: string, toId: string, cohesion: number, source: 'dream' | 'goblin' | 'retrieval'): Promise<void> {
+    const { ulid } = await import('ulid')
+    const weight = cohesion / 10
+    await this.pg.query(
+      `INSERT INTO memory_edges (id, persona_id, from_id, to_id, weight, source, use_count, created_at, last_used)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
+       ON CONFLICT (persona_id, from_id, to_id) DO UPDATE
+         SET weight    = (memory_edges.weight * memory_edges.use_count + EXCLUDED.weight) / (memory_edges.use_count + 1),
+             use_count = memory_edges.use_count + 1,
+             last_used = EXCLUDED.last_used`,
+      [ulid(), this.personaId, fromId, toId, weight, source, Date.now()]
+    )
+  }
+
+  // Returns adjacent nodes from stored edges, penalizing over-used edges to
+  // break gravity wells. Excludes already-visited nodes.
+  async getAdjacentByEdge(nodeId: string, excludeIds: string[], limit = 4): Promise<ConsolidatedMemory[]> {
+    const excludePlaceholders = excludeIds.length
+      ? `AND cm.id NOT IN (${excludeIds.map((_, i) => `$${i + 3}`).join(',')})`
+      : ''
+    // Score = weight / log(use_count + 2) — penalizes over-traversed edges
+    const { rows } = await this.pg.query(
+      `SELECT cm.*, me.weight, me.use_count,
+              me.weight / LOG(me.use_count + 2) AS traversal_score
+       FROM memory_edges me
+       JOIN consolidated_memories cm ON cm.id = me.to_id
+       WHERE me.persona_id = $1 AND me.from_id = $2
+         AND cm.embedding IS NOT NULL
+         ${excludePlaceholders}
+       ORDER BY traversal_score DESC
+       LIMIT ${limit}`,
+      [this.personaId, nodeId, ...excludeIds]
+    )
+    return rows.map((r: any) => this.rowToMemory(r))
+  }
+
+  // Orphan nodes — memories with no edges at all. Primary goblin target list.
+  async retrieveOrphans(limit = 3): Promise<ConsolidatedMemory[]> {
+    const { rows } = await this.pg.query(
+      `SELECT * FROM consolidated_memories
+       WHERE persona_id = $1
+         AND embedding IS NOT NULL
+         AND id NOT IN (
+           SELECT from_id FROM memory_edges WHERE persona_id = $1
+           UNION
+           SELECT to_id   FROM memory_edges WHERE persona_id = $1
+         )
+       ORDER BY RANDOM() LIMIT $2`,
+      [this.personaId, limit]
+    )
+    return rows.map((r: any) => this.rowToMemory(r))
+  }
+
+  // Edge stats — for UI and diagnostics
+  async edgeStats(): Promise<{ total: number; orphans: number; maxUse: number; avgWeight: number }> {
+    const [edgeRes, orphanRes] = await Promise.all([
+      this.pg.query(
+        `SELECT COUNT(*) as total, MAX(use_count) as max_use, ROUND(AVG(weight)::numeric, 3) as avg_weight
+         FROM memory_edges WHERE persona_id = $1`,
+        [this.personaId]
+      ),
+      this.pg.query(
+        `SELECT COUNT(*) as orphans FROM consolidated_memories
+         WHERE persona_id = $1 AND embedding IS NOT NULL
+           AND id NOT IN (
+             SELECT from_id FROM memory_edges WHERE persona_id = $1
+             UNION SELECT to_id FROM memory_edges WHERE persona_id = $1
+           )`,
+        [this.personaId]
+      ),
+    ])
+    const e = edgeRes.rows[0]
+    return {
+      total: Number(e.total ?? 0),
+      orphans: Number(orphanRes.rows[0].orphans ?? 0),
+      maxUse: Number(e.max_use ?? 0),
+      avgWeight: Number(e.avg_weight ?? 0),
+    }
   }
 
   async getMeta(key: string): Promise<string | null> {

@@ -456,7 +456,7 @@ ws.onmessage = (e) => {
     renderSidebar(msg.telemetry, msg.importanceBanner)
   } else if (msg.type === 'dream_event') {
     // Live dream/goblin cycle update — refresh MIND STATE panel without a full sidebar render
-    updateMindStatePanel(msg.event.mindState, msg.event.result, msg.event.confidenceStats)
+    updateMindStatePanel(msg.event.mindState, msg.event.result, msg.event.confidenceStats, msg.event.edgeStats)
     return
   } else if (msg.type === 'error') {
     addMessage('ERROR', msg.text, 'persona')
@@ -697,7 +697,7 @@ const STATE_COLORS = {
   refractory:   'var(--red)',
 }
 
-function renderMindState(ms, lastCycle, confidenceStats) {
+function renderMindState(ms, lastCycle, confidenceStats, edgeStats) {
   if (!ms) return ''
   const stateColor = STATE_COLORS[ms.state] || 'var(--muted)'
 
@@ -770,6 +770,14 @@ function renderMindState(ms, lastCycle, confidenceStats) {
       </div>
       <div style="font-size:10px;color:var(--muted)">avg ${confidenceStats.avg.toFixed(3)}</div>
     </div>` : ''}
+    ${edgeStats ? `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:3px">graph edges</div>
+    <div style="margin-bottom:8px;font-size:10px;line-height:1.8">
+      <span style="color:var(--fg)">${edgeStats.total}</span> edges &nbsp;·&nbsp;
+      <span style="color:${edgeStats.orphans > 20 ? '#f87171' : 'var(--muted)'}>${edgeStats.orphans}</span> orphans &nbsp;·&nbsp;
+      avg <span style="color:var(--fg)">${edgeStats.avgWeight.toFixed(2)}</span> &nbsp;·&nbsp;
+      max use <span style="color:${edgeStats.maxUse > 50 ? '#facc15' : 'var(--muted)'}">${edgeStats.maxUse}</span>
+    </div>` : ''}
     <div style="font-size:10px;color:var(--muted);margin-bottom:3px">active goblins</div>
     <div style="margin-bottom:8px">${goblinsHtml}</div>
     <div style="font-size:10px;color:var(--muted);margin-bottom:3px">events</div>
@@ -789,13 +797,15 @@ function renderMindState(ms, lastCycle, confidenceStats) {
 // Finds the existing panel in the right sidebar and replaces just its content.
 let lastDreamThought = null
 let lastConfidenceStats = null
-function updateMindStatePanel(ms, cycleResult, confidenceStats) {
+let lastEdgeStats = null
+function updateMindStatePanel(ms, cycleResult, confidenceStats, edgeStats) {
   if (!ms) return
   lastDreamThought = cycleResult
   if (confidenceStats) lastConfidenceStats = confidenceStats
+  if (edgeStats) lastEdgeStats = edgeStats
   const sidebar = document.getElementById('sidebar')
   if (!sidebar) return
-  const newPanelHtml = renderMindState(ms, cycleResult, lastConfidenceStats)
+  const newPanelHtml = renderMindState(ms, cycleResult, lastConfidenceStats, lastEdgeStats)
   const tmp = document.createElement('div')
   tmp.innerHTML = newPanelHtml
   const newPanel = tmp.firstElementChild
@@ -879,7 +889,7 @@ function renderSidebar(t, importanceBanner) {
   html += panel('COHESION', `<span class="badge">${c ? cScore + '/10' : 'n/a'}</span>`, cohesionBody)
 
   // MIND STATE
-  html += renderMindState(t.mindState, lastDreamThought, lastConfidenceStats)
+  html += renderMindState(t.mindState, lastDreamThought, lastConfidenceStats, lastEdgeStats)
 
   // CONTEXT
   const ctxPct = (t.contextPct * 100).toFixed(1)
