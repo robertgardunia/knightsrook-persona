@@ -152,12 +152,38 @@ export class Substrate {
     this.buffer.push(userTurn)
     await this.storage.saveTurn(userTurn)
 
-    // Embed + retrieve in parallel
+    // A: embed query + factual pull in parallel
     const [queryEmbedding, factualMems] = await Promise.all([
       embedText(userMessage),
       this.storage.retrieveByImportance(userMessage),
     ])
-    const cohesionMems = await this.storage.retrieveCohesionWeighted(queryEmbedding)
+
+    // A: vector entry points (top-R by cosine + recency)
+    const entryMems = await this.storage.retrieveCohesionWeighted(queryEmbedding, 6)
+
+    // G: tree traversal expanding from entry points via edges + adjacency at every hop
+    const traversed = await this.storage.traverseTree(
+      entryMems.map(m => m.id),
+      queryEmbedding,
+      { depth: 3, branchFactor: 4, edgeWeight: 0.3, adjacencyLimit: 3, writeEdges: false }
+    )
+
+    // A (second pass): re-rank expanded set by traversal score, cap at context budget
+    // Entry points always included; traversal nodes trimmed to top-12 total
+    const entryIds = new Set(entryMems.map(m => m.id))
+    const traversalOnly = traversed.filter(m => !entryIds.has(m.id))
+    const cohesionMems = [
+      ...entryMems,
+      ...traversalOnly.slice(0, Math.max(0, 12 - entryMems.length)),
+    ]
+
+    const retrievalStats = {
+      entryPoints: entryMems.length,
+      traversalNodes: traversalOnly.length,
+      totalInjected: cohesionMems.length,
+      maxDepth: traversed.length > 0 ? Math.max(...traversed.map(m => m.hopDepth ?? 0)) : 0,
+    }
+    console.log(`[retrieval] entry=${retrievalStats.entryPoints} traversal=${retrievalStats.traversalNodes} total=${retrievalStats.totalInjected} maxDepth=${retrievalStats.maxDepth}`)
 
     // Surface active (unresolved) goblins as open questions she should bring up
     const activeGoblins = this.mind.snapshot().activeGoblins.filter(g => g.status === 'active')
@@ -167,7 +193,8 @@ export class Substrate {
 
     const cohesionContext = cohesionMems.map(m => {
       const ts = new Date(m.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
-      return `[${m.cluster}] (${ts}) ${m.summary}`
+      const depth = (m as any).hopDepth != null ? ` d${(m as any).hopDepth}` : ''
+      return `[${m.cluster}${depth}] (${ts}) ${m.summary}`
     }).join('\n') + goblinContext
     const factualContext = [
       ...new Set([
@@ -178,7 +205,7 @@ export class Substrate {
     ].slice(0, 10).join('\n')
 
     const injectedMemories: InjectedMemory[] = [
-      ...cohesionMems.map(m => ({ cluster: m.cluster, summary: m.summary, similarity: m.similarity, source: 'cohesion' as const })),
+      ...cohesionMems.map(m => ({ cluster: m.cluster, summary: m.summary, similarity: (m as any).traversalScore ?? m.similarity, source: 'cohesion' as const })),
       ...factualMems.map(m => ({ cluster: m.cluster, summary: m.summary, source: 'factual' as const })),
     ]
 
@@ -456,6 +483,7 @@ export class Substrate {
           count: factualMems.length,
           keywordHits: factualMems.map(m => m.keywordHits ?? 0),
         },
+        traversal: retrievalStats,
       },
       normalization: {
         contradictions: actions.contradictionsFound.length,

@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-30 — memory browser tab (search, filter, paginate); /api/memories endpoint -->
+<!-- last updated: 2026-06-30 — A→G→A retrieval: vector entry points → tree traversal (edges + adjacency) → re-rank -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

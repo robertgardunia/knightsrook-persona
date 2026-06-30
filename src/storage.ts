@@ -558,6 +558,134 @@ export class Storage {
 
   // Nearest neighbours to a given embedding — used by the dream chain to find
   // what naturally connects to the current node.
+  // Tree traversal: expands from entry point node IDs via edges AND vector adjacency at every hop.
+  // Returns a flat weighted node set — scored by traversal weight + re-ranked by query similarity.
+  // Used by both conversation retrieval and dream (with different parameters).
+  async traverseTree(
+    entryIds: string[],
+    queryEmbedding: number[],
+    opts: {
+      depth?: number           // max hops from each entry point (default 3)
+      branchFactor?: number    // candidates per hop per branch (default 4)
+      edgeWeight?: number      // min edge weight to follow (default 0.3)
+      adjacencyLimit?: number  // vector neighbors to pull per hop (default 3)
+      writeEdges?: boolean     // write traversal as edges (default false for conversation)
+      edgeSource?: 'dream' | 'goblin' | 'retrieval'
+    } = {}
+  ): Promise<Array<RetrievedMemory & { traversalScore: number; hopDepth: number }>> {
+    const {
+      depth = 3,
+      branchFactor = 4,
+      edgeWeight = 0.3,
+      adjacencyLimit = 3,
+      writeEdges = false,
+      edgeSource = 'retrieval',
+    } = opts
+
+    const vec = `[${queryEmbedding.join(',')}]`
+    const visited = new Map<string, { mem: ConsolidatedMemory; traversalScore: number; hopDepth: number }>()
+
+    // Seed visited with entry points at depth 0, full traversal score
+    const entryPlaceholders = entryIds.map((_, i) => `$${i + 2}`).join(',')
+    if (entryIds.length > 0) {
+      const { rows: entryRows } = await this.pg.query(
+        `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
+         FROM consolidated_memories
+         WHERE persona_id = $${entryIds.length + 2} AND id IN (${entryPlaceholders}) AND embedding IS NOT NULL`,
+        [vec, ...entryIds, this.personaId]
+      )
+      for (const r of entryRows) {
+        visited.set(r.id, { mem: this.rowToMemory(r), traversalScore: Number(r.similarity ?? 0.5), hopDepth: 0 })
+      }
+    }
+
+    // BFS expansion
+    let frontier = [...entryIds]
+    for (let hop = 1; hop <= depth && frontier.length > 0; hop++) {
+      const nextFrontier: string[] = []
+      for (const nodeId of frontier) {
+        const parentScore = visited.get(nodeId)?.traversalScore ?? 0.5
+        const excludeIds = [...visited.keys()]
+
+        // Edges from this node
+        const edgeExcludePlaceholders = excludeIds.length
+          ? `AND cm.id NOT IN (${excludeIds.map((_, i) => `$${i + 3}`).join(',')})`
+          : ''
+        const { rows: edgeRows } = await this.pg.query(
+          `SELECT cm.*, me.weight, me.use_count,
+                  me.weight / LOG(me.use_count + 2) AS traversal_score,
+                  1 - (cm.embedding <=> $1::vector) AS similarity
+           FROM memory_edges me
+           JOIN consolidated_memories cm ON cm.id = me.to_id
+           WHERE me.persona_id = $2 AND me.from_id = $3
+             AND cm.embedding IS NOT NULL
+             AND me.weight >= ${edgeWeight}
+             ${edgeExcludePlaceholders}
+           ORDER BY traversal_score DESC
+           LIMIT ${branchFactor}`,
+          [vec, this.personaId, nodeId, ...excludeIds]
+        )
+
+        // Vector adjacency from this node's embedding
+        const { rows: nodeRow } = await this.pg.query(
+          `SELECT embedding FROM consolidated_memories WHERE id = $1`,
+          [nodeId]
+        )
+        let adjRows: any[] = []
+        if (nodeRow.length > 0 && nodeRow[0].embedding) {
+          const adjExcludePlaceholders = excludeIds.length
+            ? `AND id NOT IN (${excludeIds.map((_, i) => `$${i + 4}`).join(',')})`
+            : ''
+          const { rows } = await this.pg.query(
+            `SELECT *, 1 - (embedding <=> $1::vector) AS similarity,
+                    1 - (embedding <=> $2::vector) AS query_similarity
+             FROM consolidated_memories
+             WHERE persona_id = $3 AND embedding IS NOT NULL
+               ${adjExcludePlaceholders}
+             ORDER BY embedding <=> $1::vector
+             LIMIT ${adjacencyLimit}`,
+            [nodeRow[0].embedding, vec, this.personaId, ...excludeIds]
+          )
+          adjRows = rows
+        }
+
+        // Merge: edges get traversal_score, adjacency gets similarity as score
+        const candidates: Array<{ row: any; score: number; fromEdge: boolean }> = [
+          ...edgeRows.map((r: any) => ({ row: r, score: Number(r.traversal_score), fromEdge: true })),
+          ...adjRows.map((r: any) => ({ row: r, score: Number(r.similarity) * 0.8, fromEdge: false })),
+        ]
+
+        // Dedup by id, prefer edge score if duplicate
+        const seen = new Set<string>()
+        for (const { row, score, fromEdge } of candidates) {
+          if (seen.has(row.id) || visited.has(row.id)) continue
+          seen.add(row.id)
+          const inheritedScore = parentScore * 0.7 * score
+          visited.set(row.id, { mem: this.rowToMemory(row), traversalScore: inheritedScore, hopDepth: hop })
+          nextFrontier.push(row.id)
+          if (writeEdges && fromEdge) {
+            await this.upsertEdge(nodeId, row.id, score * 10, edgeSource)
+          }
+        }
+      }
+      frontier = nextFrontier
+    }
+
+    // Re-rank by query similarity and update retrieval counts
+    const allIds = [...visited.keys()]
+    if (allIds.length > 0) {
+      const placeholders = allIds.map((_, i) => `$${i + 2}`).join(',')
+      await this.pg.query(
+        `UPDATE consolidated_memories SET last_retrieved = $1, retrieval_count = retrieval_count + 1 WHERE id IN (${placeholders})`,
+        [Date.now(), ...allIds]
+      )
+    }
+
+    return [...visited.values()]
+      .map(({ mem, traversalScore, hopDepth }) => ({ ...mem, traversalScore, hopDepth, similarity: traversalScore }))
+      .sort((a, b) => b.traversalScore - a.traversalScore)
+  }
+
   async retrieveNearestTo(embedding: number[], excludeIds: string[], limit = 4): Promise<ConsolidatedMemory[]> {
     const vec = `[${embedding.join(',')}]`
     const excludePlaceholders = excludeIds.length

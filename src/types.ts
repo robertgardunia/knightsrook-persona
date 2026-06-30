@@ -61,6 +61,7 @@ export type ConsolidatedMemory = {
 export type RetrievalTelemetry = {
   cohesion: { count: number; similarities: number[] }
   factual:  { count: number; keywordHits: number[] }
+  traversal?: { entryPoints: number; traversalNodes: number; totalInjected: number; maxDepth: number }
 }
 
 export type NormalizationTelemetry = {

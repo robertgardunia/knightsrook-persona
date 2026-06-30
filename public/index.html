@@ -962,9 +962,13 @@ function renderSidebar(t, importanceBanner) {
   // RETRIEVAL
   const cohSims = t.retrieval.cohesion.similarities.map(s => s.toFixed(3)).join(', ') || '—'
   const factHits = t.retrieval.factual.keywordHits.join(', ') || '—'
+  const tr = t.retrieval.traversal
   const retBody = `
-    ${kv('cohesion memories', t.retrieval.cohesion.count, t.retrieval.cohesion.count > 0 ? 'green' : '')}
-    ${t.retrieval.cohesion.count > 0 ? kv('similarities', cohSims) : ''}
+    ${tr ? kv('entry points (A)', tr.entryPoints, tr.entryPoints > 0 ? 'green' : '') : ''}
+    ${tr ? kv('traversal nodes (G)', tr.traversalNodes, tr.traversalNodes > 0 ? 'blue' : '') : ''}
+    ${tr ? kv('max depth', tr.maxDepth) : ''}
+    ${tr ? kv('total injected', tr.totalInjected, tr.totalInjected > 0 ? 'green' : '') : ''}
+    ${kv('cohesion similarities', cohSims)}
     ${kv('factual memories', t.retrieval.factual.count, t.retrieval.factual.count > 0 ? 'green' : '')}
     ${t.retrieval.factual.count > 0 ? kv('keyword hits', factHits) : ''}
   `
