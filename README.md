@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-29 — edge layer added: stored traversal graph decouples adjacency from vector search; orphan-first goblin targeting; gravity well penalization via use_count -->
+<!-- last updated: 2026-06-29 — edge layer; MEMORY_ONLY env var strips conversation history to test pure memory recall -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

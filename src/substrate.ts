@@ -203,14 +203,18 @@ export class Substrate {
     }, lastSessionEnd)
 
     // Stream LLM via MCP beta — iterate raw chunks so we see mcp_tool_use/mcp_tool_result
+    // MEMORY_ONLY mode: strip conversation history, send only current user message.
+    // Forces the substrate to work purely from injected memories — honest test of recall.
+    const memoryOnly = process.env.MEMORY_ONLY === 'true'
+    const messages = memoryOnly
+      ? [{ role: this.buffer[this.buffer.length - 1].role, content: this.buffer[this.buffer.length - 1].content as any }]
+      : this.buffer.map(t => ({ role: t.role, content: (t.rawContent ?? t.content) as any }))
+
     const makeStream = () => this.client.messages.stream({
       model: this.model,
       max_tokens: 16000,
       system: systemPrompt,
-      messages: this.buffer.map(t => ({
-        role: t.role,
-        content: (t.rawContent ?? t.content) as any,
-      })),
+      messages,
     })
 
     // Stream with retry on overloaded_error — recreates stream and re-runs chunk loop.
@@ -292,7 +296,7 @@ export class Substrate {
         max_tokens: 2048,
         system: systemPrompt,
         messages: [
-          ...this.buffer.map(t => ({ role: t.role, content: (t.rawContent ?? t.content) as any })),
+          ...messages,
           { role: 'assistant', content: rawText },
           {
             role: 'user',
@@ -352,7 +356,7 @@ export class Substrate {
         max_tokens: 256,
         system: systemPrompt,
         messages: [
-          ...this.buffer.map(t => ({ role: t.role, content: (t.rawContent ?? t.content) as any })),
+          ...messages,
           { role: 'assistant', content: rawText },
           {
             role: 'user',
