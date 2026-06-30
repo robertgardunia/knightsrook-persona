@@ -83,6 +83,20 @@ app.get('/api/history/:personaId', async (req, res) => {
   res.json(rows.reverse())
 })
 
+app.get('/api/memories/:personaId', async (req, res) => {
+  const substrate = substrates.get(req.params.personaId)
+  if (!substrate) return res.json({ memories: [], total: 0 })
+  const storage = substrate.getStorage()
+  const q       = (req.query.q as string) ?? ''
+  const source  = (req.query.source as string) ?? ''
+  const from    = req.query.from ? Number(req.query.from) : 0
+  const to      = req.query.to   ? Number(req.query.to)   : Date.now()
+  const limit   = Math.min(Number(req.query.limit ?? 50), 200)
+  const offset  = Number(req.query.offset ?? 0)
+  const result  = await storage.searchMemories({ q, source, from, to, limit, offset })
+  res.json(result)
+})
+
 app.get('/api/notes/:personaId', (req, res) => {
   const p = notesPath(req.params.personaId)
   res.json({ notes: existsSync(p) ? readFileSync(p, 'utf8') : '' })

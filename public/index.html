@@ -90,6 +90,36 @@
 
   /* ── Chat ── */
   .chat { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+  .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-family: inherit; font-size: 11px; letter-spacing: 0.08em; padding: 7px 16px; cursor: pointer; }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover:not(.active) { color: var(--text); }
+  .tab-pane { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+  .tab-pane.hidden { display: none; }
+
+  /* ── Memory browser ── */
+  .mem-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+  .mem-toolbar input[type=text] { flex: 1; min-width: 160px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 12px; }
+  .mem-toolbar input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .mem-toolbar select, .mem-toolbar input[type=date] { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-family: inherit; font-size: 11px; }
+  .mem-results { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .mem-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+  .mem-card:hover { border-color: var(--accent-dim); }
+  .mem-card.expanded .mem-full { display: block; }
+  .mem-card-head { display: flex; gap: 8px; align-items: baseline; }
+  .mem-cluster { color: var(--accent); font-size: 11px; font-weight: bold; flex: 1; }
+  .mem-ts { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+  .mem-src { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .mem-src.conversation { background: #1e3a5f; color: var(--blue); }
+  .mem-src.internal { background: #2a1f4a; color: #a78bfa; }
+  .mem-preview { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+  .mem-full { display: none; color: var(--text); font-size: 11px; margin-top: 8px; line-height: 1.6; border-top: 1px solid var(--border); padding-top: 8px; white-space: pre-wrap; }
+  .mem-pagination { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); justify-content: center; flex-shrink: 0; }
+  .mem-pagination button { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 12px; border-radius: 4px; font-family: inherit; font-size: 11px; cursor: pointer; }
+  .mem-pagination button:hover { border-color: var(--accent); }
+  .mem-pagination button:disabled { opacity: 0.3; cursor: default; }
   .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .msg { max-width: 80%; padding: 10px 14px; border-radius: 8px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   .msg.user { align-self: flex-end; background: var(--user-bg); border: 1px solid var(--border); }
@@ -256,14 +286,39 @@
     </div>
   </div>
 
-  <!-- Chat -->
+  <!-- Main area with tabs -->
   <div class="chat">
-    <div class="messages" id="messages">
-      <div class="empty-state">Start a conversation. The substrate is listening.</div>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">CHAT</button>
+      <button class="tab-btn" id="tab-memories" onclick="switchTab('memories')">MEMORIES</button>
     </div>
-    <div class="input-row">
-      <textarea id="input" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
-      <button id="send">Send</button>
+
+    <!-- Chat tab -->
+    <div class="tab-pane" id="pane-chat">
+      <div class="messages" id="messages">
+        <div class="empty-state">Start a conversation. The substrate is listening.</div>
+      </div>
+      <div class="input-row">
+        <textarea id="input" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+        <button id="send">Send</button>
+      </div>
+    </div>
+
+    <!-- Memory browser tab -->
+    <div class="tab-pane hidden" id="pane-memories">
+      <div class="mem-toolbar">
+        <input id="mem-search" type="text" placeholder="Search memories…" oninput="debounceMemSearch()">
+        <select id="mem-source" onchange="loadMemories()">
+          <option value="">all</option>
+          <option value="conversation">conversation</option>
+          <option value="internal">internal (dream)</option>
+        </select>
+        <input id="mem-from" type="date" onchange="loadMemories()">
+        <input id="mem-to" type="date" onchange="loadMemories()">
+        <span id="mem-count" style="color:var(--muted);font-size:11px;margin-left:auto"></span>
+      </div>
+      <div class="mem-results" id="mem-results"></div>
+      <div class="mem-pagination" id="mem-pagination"></div>
     </div>
   </div>
 
@@ -991,6 +1046,94 @@ function renderSidebar(t, importanceBanner) {
   sidebarEl.innerHTML = html
   const leftPanels = document.getElementById('left-panels')
   if (leftPanels) leftPanels.innerHTML = left
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'))
+  document.getElementById('tab-' + tab).classList.add('active')
+  document.getElementById('pane-' + tab).classList.remove('hidden')
+  if (tab === 'memories') {
+    const fromEl = document.getElementById('mem-from')
+    const toEl   = document.getElementById('mem-to')
+    if (!fromEl.value) {
+      const now = new Date()
+      const week = new Date(now - 7 * 86400000)
+      fromEl.value = week.toISOString().slice(0, 10)
+      toEl.value   = now.toISOString().slice(0, 10)
+    }
+    loadMemories()
+  }
+}
+
+// ── Memory browser ────────────────────────────────────────────────────────────
+let memOffset = 0
+const MEM_LIMIT = 50
+let memSearchTimer = null
+
+function debounceMemSearch() {
+  clearTimeout(memSearchTimer)
+  memSearchTimer = setTimeout(loadMemories, 350)
+}
+
+function loadMemories(offsetOverride) {
+  memOffset = offsetOverride ?? 0
+  const personaId = document.getElementById('personaId')?.value || 'default'
+  const q      = document.getElementById('mem-search').value.trim()
+  const source = document.getElementById('mem-source').value
+  const from   = document.getElementById('mem-from').value
+  const to     = document.getElementById('mem-to').value
+
+  const params = new URLSearchParams({ limit: MEM_LIMIT, offset: memOffset })
+  if (q)      params.set('q', q)
+  if (source) params.set('source', source)
+  if (from)   params.set('from', new Date(from).getTime())
+  if (to)     params.set('to', new Date(to + 'T23:59:59').getTime())
+
+  fetch(`/api/memories/${personaId}?${params}`)
+    .then(r => r.json())
+    .then(renderMemories)
+    .catch(e => { document.getElementById('mem-results').innerHTML = '<div style="color:var(--red);padding:16px">Error loading memories</div>' })
+}
+
+function renderMemories({ memories, total }) {
+  const results = document.getElementById('mem-results')
+  const count   = document.getElementById('mem-count')
+  const pages   = document.getElementById('mem-pagination')
+
+  count.textContent = `${total.toLocaleString()} memories`
+
+  if (!memories.length) {
+    results.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center">No memories found</div>'
+    pages.innerHTML = ''
+    return
+  }
+
+  results.innerHTML = memories.map(m => {
+    const ts  = new Date(m.createdAt).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+    const src = m.source === 'internal' ? 'internal' : 'conversation'
+    const preview = (m.summary || '').slice(0, 160)
+    const full    = escHtml(m.summary || '')
+    return `<div class="mem-card" onclick="this.classList.toggle('expanded')">
+      <div class="mem-card-head">
+        <span class="mem-cluster">${escHtml(m.cluster)}</span>
+        <span class="mem-src ${src}">${src}</span>
+        <span class="mem-ts">${ts}</span>
+      </div>
+      <div class="mem-preview">${escHtml(preview)}${m.summary.length > 160 ? '…' : ''}</div>
+      <div class="mem-full">${full}</div>
+    </div>`
+  }).join('')
+
+  // Pagination
+  const totalPages = Math.ceil(total / MEM_LIMIT)
+  const curPage    = Math.floor(memOffset / MEM_LIMIT)
+  pages.innerHTML = totalPages <= 1 ? '' : `
+    <button onclick="loadMemories(${Math.max(0, memOffset - MEM_LIMIT)})" ${curPage === 0 ? 'disabled' : ''}>← prev</button>
+    <span style="color:var(--muted);font-size:11px;align-self:center">${curPage + 1} / ${totalPages}</span>
+    <button onclick="loadMemories(${memOffset + MEM_LIMIT})" ${curPage >= totalPages - 1 ? 'disabled' : ''}>next →</button>
+  `
 }
 </script>
 </body>

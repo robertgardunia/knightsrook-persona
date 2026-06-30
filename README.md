@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-29 — edge layer; MEMORY_ONLY; 2-minute idle timer before dream transition -->
+<!-- last updated: 2026-06-30 — memory browser tab (search, filter, paginate); /api/memories endpoint -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

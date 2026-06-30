@@ -518,6 +518,28 @@ export class Storage {
     }
   }
 
+  async searchMemories(opts: {
+    q: string; source: string; from: number; to: number; limit: number; offset: number
+  }): Promise<{ memories: ConsolidatedMemory[]; total: number }> {
+    const conditions: string[] = ['persona_id = $1', 'created_at BETWEEN $2 AND $3']
+    const params: any[] = [this.personaId, opts.from, opts.to]
+    let i = 4
+    if (opts.source) { conditions.push(`source = $${i++}`); params.push(opts.source) }
+    if (opts.q) {
+      conditions.push(`(summary ILIKE $${i} OR cluster ILIKE $${i})`)
+      params.push(`%${opts.q}%`); i++
+    }
+    const where = conditions.join(' AND ')
+    const [{ rows: countRows }, { rows }] = await Promise.all([
+      this.pg.query(`SELECT COUNT(*) as total FROM consolidated_memories WHERE ${where}`, params),
+      this.pg.query(
+        `SELECT * FROM consolidated_memories WHERE ${where} ORDER BY created_at DESC LIMIT $${i} OFFSET $${i+1}`,
+        [...params, opts.limit, opts.offset]
+      ),
+    ])
+    return { memories: rows.map((r: any) => this.rowToMemory(r)), total: Number(countRows[0].total) }
+  }
+
   async getMeta(key: string): Promise<string | null> {
     const result = await this.pg.query(
       `SELECT value FROM persona_meta WHERE persona_id = $1 AND key = $2`,
