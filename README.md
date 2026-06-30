@@ -1,5 +1,5 @@
 # knightsrook-persona
-<!-- last updated: 2026-06-29 — edge layer; MEMORY_ONLY; fix stuck-in-conversation state when goblins active -->
+<!-- last updated: 2026-06-29 — edge layer; MEMORY_ONLY; 2-minute idle timer before dream transition -->
 
 Substrate layer that gives LLMs persistent memory, equilibrium, and continuity across context resets.
 

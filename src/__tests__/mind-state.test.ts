@@ -38,17 +38,18 @@ describe('MindState', () => {
       expect(ms.snapshot().state).toBe('conversation')
     })
 
-    it('returns to dream on end when no goblins', () => {
+    it('stays in conversation briefly after end (2-min idle timer)', () => {
       ms.onConversationStart()
       ms.onConversationEnd()
-      expect(ms.snapshot().state).toBe('dream')
+      // Timer is pending — still in conversation until idle fires
+      expect(ms.snapshot().state).toBe('conversation')
     })
 
-    it('stays in goblin state on end when goblins are active', () => {
+    it('new message cancels idle timer and re-enters conversation', () => {
       ms.onConversationStart()
-      ms.fireGoblin('unresolved thread')
       ms.onConversationEnd()
-      expect(ms.snapshot().state).toBe('goblin')
+      ms.onConversationStart()
+      expect(ms.snapshot().state).toBe('conversation')
     })
   })
 

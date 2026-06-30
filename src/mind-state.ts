@@ -153,16 +153,25 @@ export class MindState {
     }
   }
 
-  // Called when conversation begins (user sends a message)
+  private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private static readonly IDLE_MS = 2 * 60 * 1000  // 2 minutes
+
+  // Called when user sends a message — cancels any pending idle timer
   onConversationStart(): void {
     this.resetBudget()
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
     this.transition('conversation', 'user message received')
   }
 
-  // Called when conversation turn completes
+  // Called when a turn completes — starts 2-minute idle timer before returning to dream
   onConversationEnd(): void {
-    if (this.state === 'conversation') {
-      this.transition('dream', 'turn complete')
-    }
+    if (this.state !== 'conversation') return
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = setTimeout(() => {
+      if (this.state === 'conversation') {
+        this.transition('dream', 'idle timeout — no activity for 2 minutes')
+      }
+      this.idleTimer = null
+    }, MindState.IDLE_MS)
   }
 }
