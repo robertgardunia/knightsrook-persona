@@ -161,8 +161,8 @@ export class MindState {
 
   // Called when conversation turn completes
   onConversationEnd(): void {
-    if (this.state === 'conversation' && this.activeGoblins().length === 0) {
-      this.transition('dream', 'turn complete, no active goblins')
+    if (this.state === 'conversation') {
+      this.transition('dream', 'turn complete')
     }
   }
 }
