@@ -609,7 +609,7 @@ export class Storage {
 
         // Edges from this node
         const edgeExcludePlaceholders = excludeIds.length
-          ? `AND cm.id NOT IN (${excludeIds.map((_, i) => `$${i + 3}`).join(',')})`
+          ? `AND cm.id NOT IN (${excludeIds.map((_, i) => `$${i + 4}`).join(',')})`
           : ''
         const { rows: edgeRows } = await this.pg.query(
           `SELECT cm.*, me.weight, me.use_count,
