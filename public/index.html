@@ -363,7 +363,8 @@ function renderThinking() {
       ${resultHtml}
     </div>`
   }).join('')
-  const textHtml = streamText ? `<div style="margin-top:${streamToolCalls.length ? '6px' : '0'}">${escHtml(streamText)}</div>` : ''
+  const visibleText = streamText.replace(/<cohesion>[\s\S]*?<\/cohesion>/g, '').replace(/<recall>[\s\S]*?<\/recall>/g, '').trim()
+  const textHtml = visibleText ? `<div style="margin-top:${streamToolCalls.length ? '6px' : '0'}">${escHtml(visibleText)}</div>` : ''
   contentEl.innerHTML = toolHtml + textHtml || 'thinking…'
   messagesEl.scrollTop = messagesEl.scrollHeight
 }
@@ -474,7 +475,7 @@ ws.onmessage = (e) => {
     const ev = msg.event
     if (ev.type === 'text_delta') {
       streamText += ev.text
-      renderThinking()
+      renderThinking() // strips internal blocks before display
     } else if (ev.type === 'tool_use') {
       streamToolCalls.push({ name: ev.name, done: false, result: null })
       renderThinking()
